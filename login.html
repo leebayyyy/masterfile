@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script type="module" src="./js/login.js?v=4"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous" />
+  </head>
+  <body class="bg-light">
+    <main class="container py-5">
+      <div class="row justify-content-center">
+        <div class="col-md-5">
+          <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white"><h1 class="h4 mb-0">POS &amp; AR Login</h1></div>
+            <div class="card-body">
+              <form id="login-form">
+                <label class="form-label" for="username">Username</label>
+                <input class="form-control mb-3" id="username" autocomplete="username" required />
+                <label class="form-label" for="password">Password</label>
+                <div class="input-group mb-3">
+                  <input class="form-control" id="password" type="password" autocomplete="current-password" required />
+                  <button class="btn btn-outline-secondary" type="button" id="toggle-password" aria-label="Show password" aria-pressed="false">
+                    <svg id="password-visible-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+                      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"></path>
+                      <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                    <svg id="password-hidden-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M3 3l18 18"></path>
+                      <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"></path>
+                      <path d="M9.9 5.2A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a14.8 14.8 0 0 1-3.2 4.1"></path>
+                      <path d="M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7a10.8 10.8 0 0 0 4-.8"></path>
+                    </svg>
+                  </button>
+                </div>
+                <button class="btn btn-primary w-100" type="submit">Login</button>
+                <div id="login-error" class="text-danger mt-3"></div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

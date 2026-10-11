@@ -1,0 +1,99 @@
+import { getSession } from "./auth.js?v=3";
+
+const sukiUrl = new URL("../api/suki_card.php", import.meta.url).href;
+let canManageCards = false;
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("card-form").addEventListener("submit", saveCard);
+  authorizeAndLoad().catch(showError);
+});
+
+const authorizeAndLoad = async () => {
+  const session = await getSession();
+  if (!session.authenticated || !session.user) {
+    window.location.href = "login.html";
+    return;
+  }
+  if (!["Admin", "Manager"].includes(session.user.role_name)) {
+    showError({ response: { status: 403 } });
+    return;
+  }
+  await loadCards();
+};
+
+const loadCards = async () => {
+  const { data } = await axios.get(sukiUrl, {
+    params: { operation: "getData" },
+    withCredentials: true,
+  });
+  canManageCards = data.canManageCards;
+  document.getElementById("btn-add-card").classList.toggle("d-none", !canManageCards);
+  document.getElementById("card-form").classList.toggle("d-none", !canManageCards);
+  if (canManageCards) {
+    document.getElementById("customer_id").innerHTML =
+      '<option value="">-- SELECT CUSTOMER --</option>' +
+      data.customers.map((customer) =>
+        `<option value="${customer.ar_customer_id}">${customer.customer_name}</option>`).join("");
+  }
+  document.getElementById("cards").innerHTML = data.cards.length
+    ? `<div class="table-responsive"><table class="table table-striped table-sm">
+        <thead><tr><th>Card</th><th>Customer</th><th>Issue Date</th><th>Expiry</th><th>Points</th>
+        <th>Sales</th><th>Sales Total</th><th>Last Sale</th><th>Status</th>${canManageCards ? "<th>Action</th>" : ""}</tr></thead>
+        <tbody>${data.cards.map((card) => `
+          <tr><td>${card.card_number}</td><td>${card.customer_name}</td>
+          <td>${card.issued_date || ""}</td><td>${card.expiry_date || ""}</td>
+          <td>${Number(card.points_balance || 0).toFixed(0)}</td>
+          <td>${card.sale_count}</td><td>${Number(card.sales_total || 0).toFixed(2)}</td>
+          <td>${card.last_sale_date || ""}</td><td>${card.is_active == 1 ? "Active" : "Inactive"}</td>
+          ${canManageCards ? `<td><button class="btn btn-sm btn-outline-secondary" data-id="${card.sku_card_id}" data-active="${card.is_active}">${card.is_active == 1 ? "Deactivate" : "Activate"}</button></td>` : ""}
+          </tr>`).join("")}</tbody></table></div>`
+    : '<p class="text-muted">No SUKI cards registered.</p>';
+  document.querySelectorAll("[data-id]").forEach((button) => {
+    button.addEventListener("click", () =>
+      runAction(() => toggle(button.dataset.id, button.dataset.active == 1)));
+  });
+};
+
+const saveCard = async (event) => {
+  event.preventDefault();
+  const formData = new FormData();
+  formData.append("operation", "insert");
+  formData.append("json", JSON.stringify({
+    customerId: document.getElementById("customer_id").value,
+    cardNumber: document.getElementById("card_number").value,
+    issuedDate: document.getElementById("issued_date").value,
+    expiryDate: document.getElementById("expiry_date").value,
+  }));
+  await runAction(async () => {
+    await axios.post(sukiUrl, formData, { withCredentials: true });
+    event.target.reset();
+    await loadCards();
+  });
+};
+
+const toggle = async (id, active) => {
+  const formData = new FormData();
+  formData.append("operation", "setActive");
+  formData.append("json", JSON.stringify({ id, active: active ? 0 : 1 }));
+  await axios.post(sukiUrl, formData, { withCredentials: true });
+  await loadCards();
+};
+
+const runAction = async (action) => {
+  try {
+    await action();
+  } catch (error) {
+    showError(error);
+  }
+};
+
+const showError = (error) => {
+  console.error(error);
+  const message = error.response?.status === 403
+    ? "SUKI card access is limited to Admin and Manager accounts. Your current role cannot access these records."
+    : error.response?.data?.message || "Unable to load or update SUKI cards.";
+  document.getElementById("suki-error").textContent = message;
+  document.getElementById("suki-error").classList.remove("d-none");
+  document.getElementById("btn-add-card").classList.add("d-none");
+  document.getElementById("card-form").classList.add("d-none");
+};

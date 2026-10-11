@@ -1,0 +1,110 @@
+<?php
+require_once "auth-lib.php";
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+
+$operation = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['operation'] ?? '') : ($_POST['operation'] ?? '');
+$json = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['json'] ?? '') : ($_POST['json'] ?? '');
+$data = json_decode($json, true);
+
+if ($operation === 'getData') {
+  $user = requireRoles(["Admin", "Manager"]);
+  include "connection-pdo.php";
+  echo json_encode([
+    "cards" => $conn->query(
+      "SELECT s.sku_card_id, s.card_number, s.issued_date, s.expiry_date,
+              s.points_balance, s.is_active, c.ar_customer_id, c.customer_name,
+              COALESCE(a.sale_count, 0) AS sale_count,
+              COALESCE(a.sales_total, 0) AS sales_total,
+              a.last_sale_date
+       FROM tblsku_card s
+       INNER JOIN tblar_customers c ON c.ar_customer_id=s.ar_customer_id
+       LEFT JOIN (
+         SELECT suki_card_id, COUNT(*) AS sale_count, SUM(total_amount) AS sales_total,
+                MAX(sale_date) AS last_sale_date
+         FROM tblsales
+         WHERE suki_card_id IS NOT NULL
+         GROUP BY suki_card_id
+       ) a ON a.suki_card_id=s.sku_card_id
+       ORDER BY s.sku_card_id DESC"
+    )->fetchAll(PDO::FETCH_ASSOC),
+    "customers" => $user['role_name'] === 'Admin'
+      ? $conn->query("SELECT ar_customer_id, customer_name FROM tblar_customers WHERE is_active=1 ORDER BY customer_name")->fetchAll(PDO::FETCH_ASSOC)
+      : [],
+    "canManageCards" => $user['role_name'] === 'Admin'
+  ]);
+  exit;
+}
+
+requireRoles(["Admin"]);
+include "connection-pdo.php";
+
+if ($operation === 'insert') {
+  $card = trim((string)($data['cardNumber'] ?? ''));
+  $customerId = filter_var($data['customerId'] ?? null, FILTER_VALIDATE_INT);
+  $issuedDate = $data['issuedDate'] ?? '';
+  $expiryDate = $data['expiryDate'] ?? '';
+  $validDate = function($value) {
+    if ($value === '') return true;
+    if (!is_string($value)) return false;
+    $date = DateTime::createFromFormat('!Y-m-d', $value);
+    return $date && $date->format('Y-m-d') === $value;
+  };
+  if ($card === '' || strlen($card) > 100 || !$customerId || $customerId < 1 ||
+      !$validDate($issuedDate) || !$validDate($expiryDate) ||
+      ($issuedDate !== '' && $expiryDate !== '' && $expiryDate < $issuedDate)) {
+    http_response_code(422);
+    echo json_encode(["message"=>"Enter a customer, card number, and valid issue/expiry dates."]);
+    exit;
+  }
+  $customerStmt = $conn->prepare("SELECT 1 FROM tblar_customers WHERE ar_customer_id=:customerId AND is_active=1");
+  $customerStmt->execute([":customerId"=>$customerId]);
+  if (!$customerStmt->fetchColumn()) {
+    http_response_code(422);
+    echo json_encode(["message"=>"Select an active AR customer for the Suki card."]);
+    exit;
+  }
+  $activeCardStmt = $conn->prepare("SELECT 1 FROM tblsku_card WHERE ar_customer_id=:customerId AND is_active=1");
+  $activeCardStmt->execute([":customerId"=>$customerId]);
+  if ($activeCardStmt->fetchColumn()) {
+    http_response_code(422);
+    echo json_encode(["message"=>"This customer already has an active Suki card."]);
+    exit;
+  }
+  $stmt = $conn->prepare(
+    "INSERT INTO tblsku_card(ar_customer_id, card_number, issued_date, expiry_date, points_balance, is_active)
+     VALUES(:customerId, :cardNumber, :issuedDate, :expiryDate, 0, 1)"
+  );
+  try {
+    $stmt->execute([
+      ":customerId"=>$customerId,
+      ":cardNumber"=>$card,
+      ":issuedDate"=>$issuedDate ?: null,
+      ":expiryDate"=>$expiryDate ?: null
+    ]);
+    echo json_encode(["returnValue"=>1]);
+  } catch (PDOException $e) {
+    error_log("Unable to add SUKI card: " . $e->getMessage());
+    http_response_code(422);
+    echo json_encode(["message"=>"Unable to add the SUKI card. Card number may already exist."]);
+  }
+  exit;
+}
+
+if ($operation === 'setActive') {
+  $id = filter_var($data['id'] ?? null, FILTER_VALIDATE_INT);
+  if (!$id || $id < 1 || !isset($data['active']) ||
+      !in_array((string)$data['active'], ['0', '1'], true)) {
+    http_response_code(422);
+    echo json_encode(["message"=>"A valid card and active state are required."]);
+    exit;
+  }
+  $stmt = $conn->prepare("UPDATE tblsku_card SET is_active=:active WHERE sku_card_id=:id");
+  $stmt->execute([":active"=>(int)$data['active'], ":id"=>$id]);
+  echo json_encode(["returnValue"=>1]);
+  exit;
+}
+
+http_response_code(400);
+echo json_encode(["message"=>"Invalid SUKI card operation."]);
+?>
