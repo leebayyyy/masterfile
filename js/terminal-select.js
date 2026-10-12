@@ -41,7 +41,7 @@ const selectTerminal = async (event) => {
   try {
     const { data } = await axios.post(apiUrl, formData, { withCredentials: true });
     if (data.returnValue !== 1) throw new Error("Terminal selection was not saved.");
-    window.location.href = "index.html";
+    window.location.href = "sales.html";
   } catch (requestError) {
     showError(requestError);
   }

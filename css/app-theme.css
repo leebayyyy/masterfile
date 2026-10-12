@@ -1,0 +1,836 @@
+/* ==========================================================================
+   Retail POS & AR Master Files — Unified Design System (Batch A)
+   Professional, production-grade styles for administrative & operational pages
+   ========================================================================== */
+
+:root {
+  --app-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --app-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* Color Palette */
+  --app-bg: #f8fafc;
+  --app-surface: #ffffff;
+  --app-surface-subtle: #f1f5f9;
+  --app-border: #e2e8f0;
+  --app-border-strong: #cbd5e1;
+
+  --app-text-main: #0f172a;
+  --app-text-muted: #64748b;
+  --app-text-light: #94a3b8;
+
+  --app-primary: #2563eb;
+  --app-primary-hover: #1d4ed8;
+  --app-primary-subtle: #eff6ff;
+
+  --app-success: #10b981;
+  --app-success-subtle: #ecfdf5;
+
+  --app-warning: #f59e0b;
+  --app-warning-subtle: #fffbeb;
+
+  --app-danger: #ef4444;
+  --app-danger-subtle: #fef2f2;
+
+  /* Sidebar Tokens */
+  --app-sidebar-bg: #0f172a;
+  --app-sidebar-surface: #1e293b;
+  --app-sidebar-border: #334155;
+  --app-sidebar-text: #94a3b8;
+  --app-sidebar-text-hover: #f8fafc;
+  --app-sidebar-active-bg: #2563eb;
+  --app-sidebar-active-text: #ffffff;
+  --app-sidebar-width: 250px;
+
+  /* Topbar Tokens */
+  --app-topbar-height: 58px;
+  --app-topbar-bg: #ffffff;
+  --app-topbar-border: #e2e8f0;
+
+  /* Shadows */
+  --app-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --app-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --app-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+}
+
+/* Base resets for administrative pages */
+body.has-app-sidebar {
+  font-family: var(--app-font);
+  background-color: var(--app-bg);
+  color: var(--app-text-main);
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-top: var(--app-topbar-height) !important;
+}
+
+@media (min-width: 992px) {
+  body.has-app-sidebar {
+    padding-left: var(--app-sidebar-width) !important;
+  }
+}
+
+/* ==========================================================================
+   SIDEBAR NAVIGATION
+   ========================================================================== */
+
+#app-sidebar {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--app-sidebar-width);
+  background-color: var(--app-sidebar-bg);
+  color: var(--app-sidebar-text);
+  z-index: 1045;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.25s ease-in-out;
+  overflow: hidden;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Sidebar Brand Header */
+.app-sidebar-brand {
+  height: var(--app-topbar-height);
+  padding: 0 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--app-sidebar-border);
+  background: #090d16;
+  text-decoration: none;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.app-sidebar-brand:hover {
+  color: #ffffff;
+}
+
+.app-sidebar-brand-badge {
+  background: var(--app-primary);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.35rem;
+  letter-spacing: 0.5px;
+}
+
+.app-sidebar-brand-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  line-height: 1.2;
+}
+
+.app-sidebar-brand-sub {
+  font-size: 0.7rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Sidebar Scrollable Nav */
+.app-sidebar-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1rem 0.75rem;
+}
+
+.app-sidebar-heading {
+  font-size: 0.675rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.75px;
+  color: #64748b;
+  padding: 0.75rem 0.6rem 0.25rem;
+  margin-top: 0.5rem;
+}
+
+.app-sidebar-heading:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.app-sidebar-nav {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.app-sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.375rem;
+  color: var(--app-sidebar-text);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  min-height: 38px;
+}
+
+.app-sidebar-link:hover {
+  background-color: var(--app-sidebar-surface);
+  color: var(--app-sidebar-text-hover);
+}
+
+.app-sidebar-link.active {
+  background-color: var(--app-sidebar-active-bg);
+  color: var(--app-sidebar-active-text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.4);
+}
+
+.app-sidebar-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.app-sidebar-link.active .app-sidebar-icon {
+  opacity: 1;
+}
+
+/* Sidebar Footer User Card */
+.app-sidebar-footer {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--app-sidebar-border);
+  background: #090d16;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.app-sidebar-user-info {
+  min-width: 0;
+}
+
+.app-sidebar-user-name {
+  color: #ffffff;
+  font-size: 0.825rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.app-sidebar-user-role {
+  color: #64748b;
+  font-size: 0.725rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.app-sidebar-logout-btn {
+  background: transparent;
+  border: 1px solid #475569;
+  color: #cbd5e1;
+  border-radius: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.app-sidebar-logout-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
+/* Mobile Sidebar Drawer State */
+@media (max-width: 991.98px) {
+  #app-sidebar {
+    transform: translateX(-100%);
+  }
+
+  body.sidebar-open #app-sidebar {
+    transform: translateX(0);
+  }
+
+  #app-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(2px);
+    z-index: 1040;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  body.sidebar-open #app-sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* ==========================================================================
+   TOPBAR NAVIGATION
+   ========================================================================== */
+
+#app-topbar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--app-topbar-height);
+  background-color: var(--app-topbar-bg);
+  border-bottom: 1px solid var(--app-topbar-border);
+  z-index: 1030;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.25rem;
+  box-shadow: var(--app-shadow-sm);
+  transition: left 0.25s ease;
+}
+
+@media (min-width: 992px) {
+  #app-topbar {
+    left: var(--app-sidebar-width);
+  }
+}
+
+.app-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app-topbar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--app-border);
+  border-radius: 0.375rem;
+  padding: 0.4rem;
+  color: var(--app-text-main);
+  cursor: pointer;
+  min-height: 38px;
+  min-width: 38px;
+}
+
+.app-topbar-toggle:hover {
+  background: var(--app-surface-subtle);
+}
+
+@media (min-width: 992px) {
+  .app-topbar-toggle {
+    display: none;
+  }
+}
+
+.app-topbar-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--app-text-main);
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+.app-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app-topbar-role-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.6rem;
+  border-radius: 2rem;
+  letter-spacing: 0.3px;
+}
+
+.app-topbar-logout-btn {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.375rem;
+  min-height: 36px;
+}
+
+/* ==========================================================================
+   PAGE WRAPPERS & CONTAINERS
+   ========================================================================== */
+
+.app-page-container {
+  padding: 1.5rem 1.25rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+@media (max-width: 575.98px) {
+  .app-page-container {
+    padding: 1rem 0.75rem;
+  }
+}
+
+/* Reusable Professional Card */
+.app-card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 0.5rem;
+  box-shadow: var(--app-shadow-sm);
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+}
+
+.app-card-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.app-card-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--app-text-main);
+}
+
+.app-card-body {
+  padding: 1.25rem;
+}
+
+/* Reusable Clean Data Table */
+.app-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-table {
+  width: 100%;
+  margin-bottom: 0;
+  font-size: 0.875rem;
+}
+
+.app-table thead th {
+  background: #f8fafc;
+  color: var(--app-text-muted);
+  font-weight: 600;
+  font-size: 0.775rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--app-border-strong);
+  padding: 0.65rem 0.85rem;
+  white-space: nowrap;
+}
+
+.app-table tbody td {
+  padding: 0.75rem 0.85rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.app-table tbody tr:hover {
+  background-color: #f1f5f9;
+}
+
+.app-table .num-cell {
+  font-family: var(--app-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   LOGIN PAGE STYLING
+   ========================================================================== */
+
+body.login-page {
+  background-color: #0b0f19;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--app-font);
+  padding: 1.25rem;
+  margin: 0;
+}
+
+.login-container {
+  width: 100%;
+  max-width: 440px;
+}
+
+.login-card {
+  background: #ffffff;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+  border: 1px solid #1e293b;
+  overflow: hidden;
+}
+
+.login-header {
+  background: #0f172a;
+  padding: 2rem 1.75rem 1.75rem;
+  text-align: center;
+  color: #ffffff;
+  border-bottom: 1px solid #1e293b;
+}
+
+.login-badge {
+  display: inline-block;
+  background: rgba(37, 99, 235, 0.25);
+  border: 1px solid rgba(37, 99, 235, 0.6);
+  color: #60a5fa;
+  font-size: 0.725rem;
+  font-weight: 700;
+  letter-spacing: 0.75px;
+  text-transform: uppercase;
+  padding: 0.25rem 0.65rem;
+  border-radius: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+.login-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  margin-bottom: 0.35rem;
+}
+
+.login-subtitle {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  margin-bottom: 0;
+}
+
+.login-body {
+  padding: 2rem 1.75rem;
+}
+
+.login-form-label {
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: var(--app-text-main);
+  margin-bottom: 0.35rem;
+}
+
+.login-form-control {
+  font-size: 0.95rem;
+  padding: 0.65rem 0.85rem;
+  border: 1.5px solid var(--app-border-strong);
+  border-radius: 0.45rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.login-form-control:focus {
+  border-color: var(--app-primary);
+  box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.18);
+  outline: none;
+}
+
+.login-submit-btn {
+  background: var(--app-primary);
+  border: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.45rem;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
+  transition: background-color 0.15s ease, transform 0.05s ease;
+}
+
+.login-submit-btn:hover {
+  background: var(--app-primary-hover);
+}
+
+.login-submit-btn:active {
+  transform: scale(0.99);
+}
+
+.login-footer-note {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--app-text-muted);
+  margin-top: 1.25rem;
+}
+
+/* ==========================================================================
+   INTERNAL MANAGEMENT PAGES (BATCH C UNIFIED STYLING)
+   Scoped to body.has-app-sidebar so Cashier POS is 100% isolated
+   ========================================================================== */
+
+/* Main Container Layout */
+body.has-app-sidebar .container,
+body.has-app-sidebar main.container {
+  max-width: 1360px;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+  margin-top: 1.5rem !important;
+  margin-bottom: 2rem !important;
+}
+
+@media (max-width: 575.98px) {
+  body.has-app-sidebar .container,
+  body.has-app-sidebar main.container {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    margin-top: 1rem !important;
+  }
+}
+
+/* Header Sections on Management Pages */
+body.has-app-sidebar #header-div,
+body.has-app-sidebar .container > .d-flex.justify-content-between {
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--app-border);
+}
+
+body.has-app-sidebar #header-text,
+body.has-app-sidebar h1 {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  color: var(--app-text-main);
+  margin: 0;
+  text-transform: uppercase;
+}
+
+body.has-app-sidebar #btn-add,
+body.has-app-sidebar #btn-add-card,
+body.has-app-sidebar #btn-new-memo {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.45rem 1rem;
+  border-radius: 0.375rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Data Tables & Containers */
+body.has-app-sidebar #table-div,
+body.has-app-sidebar #invoices,
+body.has-app-sidebar #memos,
+body.has-app-sidebar #cards,
+body.has-app-sidebar #promotions,
+body.has-app-sidebar #methods,
+body.has-app-sidebar #assignments,
+body.has-app-sidebar #report-content {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 0.5rem;
+  box-shadow: var(--app-shadow-sm);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-top: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+body.has-app-sidebar .table {
+  margin-bottom: 0;
+  font-size: 0.875rem;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+body.has-app-sidebar .table thead th {
+  background-color: #f8fafc;
+  color: #475569;
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-top: none;
+  border-bottom: 1px solid var(--app-border-strong);
+  padding: 0.75rem 0.85rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+body.has-app-sidebar .table tbody td {
+  padding: 0.75rem 0.85rem;
+  vertical-align: middle;
+  border-bottom: 1px solid #f1f5f9;
+  color: #1e293b;
+}
+
+body.has-app-sidebar .table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+body.has-app-sidebar .table-hover tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+body.has-app-sidebar .table-striped tbody tr:nth-of-type(odd) {
+  background-color: #ffffff;
+}
+
+body.has-app-sidebar .table-striped tbody tr:nth-of-type(even) {
+  background-color: #fafbfc;
+}
+
+/* Action Buttons inside Table Rows */
+body.has-app-sidebar .btn-update,
+body.has-app-sidebar .btn-delete,
+body.has-app-sidebar .table .btn-sm {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.35rem;
+  margin-right: 0.25rem;
+  transition: all 0.15s ease;
+  line-height: 1.3;
+}
+
+body.has-app-sidebar .btn-update,
+body.has-app-sidebar .btn-success {
+  background-color: #10b981;
+  border-color: #10b981;
+  color: #ffffff;
+}
+
+body.has-app-sidebar .btn-update:hover,
+body.has-app-sidebar .btn-success:hover {
+  background-color: #059669;
+  border-color: #059669;
+}
+
+body.has-app-sidebar .btn-delete,
+body.has-app-sidebar .btn-danger {
+  background-color: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+body.has-app-sidebar .btn-delete:hover,
+body.has-app-sidebar .btn-danger:hover {
+  background-color: #dc2626;
+  border-color: #dc2626;
+}
+
+/* Status Badges */
+body.has-app-sidebar .badge {
+  font-weight: 600;
+  padding: 0.3rem 0.55rem;
+  border-radius: 0.35rem;
+  font-size: 0.75rem;
+}
+
+/* Modal Dialog Modernization */
+body.has-app-sidebar .modal-content {
+  border: 1px solid var(--app-border);
+  border-radius: 0.5rem;
+  box-shadow: var(--app-shadow-md);
+  overflow: hidden;
+}
+
+body.has-app-sidebar .modal-header {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #1e293b;
+}
+
+body.has-app-sidebar .modal-header .modal-title,
+body.has-app-sidebar .modal-header h5 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+  color: #ffffff !important;
+}
+
+body.has-app-sidebar .modal-header .btn-close {
+  filter: invert(1) grayscale(100%) brightness(200%);
+  opacity: 0.8;
+}
+
+body.has-app-sidebar .modal-header .btn-close:hover {
+  opacity: 1;
+}
+
+body.has-app-sidebar .modal-body {
+  padding: 1.25rem;
+  background-color: #ffffff;
+}
+
+body.has-app-sidebar .modal-footer {
+  background-color: #f8fafc;
+  border-top: 1px solid var(--app-border);
+  padding: 0.85rem 1.25rem;
+}
+
+/* Form Controls & Labels */
+body.has-app-sidebar .form-control,
+body.has-app-sidebar .form-select {
+  font-size: 0.875rem;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  color: var(--app-text-main);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+body.has-app-sidebar .form-control:focus,
+body.has-app-sidebar .form-select:focus {
+  border-color: var(--app-primary);
+  box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.15);
+  outline: none;
+}
+
+body.has-app-sidebar .form-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 0.25rem;
+}
+
+/* Generic Cards on Settings & Reports */
+body.has-app-sidebar .card {
+  border: 1px solid var(--app-border);
+  border-radius: 0.5rem;
+  box-shadow: var(--app-shadow-sm);
+  background-color: var(--app-surface);
+  overflow: hidden;
+}
+
+body.has-app-sidebar .card-header {
+  background-color: #f8fafc;
+  border-bottom: 1px solid var(--app-border);
+  font-weight: 700;
+  font-size: 0.925rem;
+  color: var(--app-text-main);
+  padding: 0.85rem 1.25rem;
+}
+
+/* Terminal Selection Workspace */
+body.terminal-select-body {
+  background-color: #0b0f19;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--app-font);
+  margin: 0;
+}

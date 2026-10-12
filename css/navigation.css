@@ -1,99 +1,24 @@
+@import url("./app-theme.css");
+
+/* ==========================================================================
+   Navigation Compatibility Styles
+   Coordinates with app-theme.css for legacy views and sidebar layouts
+   ========================================================================== */
+
+/* Ensure smooth scrolling */
 html {
-  scroll-padding-top: var(--app-nav-height, 5rem);
+  scroll-behavior: smooth;
 }
 
-body {
-  padding-top: var(--app-nav-height, 5rem);
-}
-
-.app-navbar {
-  inset-block-start: 0;
-  inset-inline: 0;
-  position: fixed;
-  width: 100%;
-  z-index: 1030;
-}
-
-.app-navbar > .container-fluid {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
-}
-
-.app-nav-toggle {
-  align-items: center;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  border-radius: 0.375rem;
-  color: #fff;
-  display: inline-flex;
-  height: 2.5rem;
-  justify-content: center;
-  margin-inline-start: auto;
-  width: 2.75rem;
-}
-
-.app-nav-toggle:hover,
-.app-nav-toggle:focus-visible {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.app-nav-toggle svg {
-  height: 1.25rem;
-  width: 1.25rem;
-}
-
-.app-nav-collapse {
-  flex-basis: 100%;
-  max-height: calc(100vh - 4rem);
-  max-height: calc(100dvh - 4rem);
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.app-nav-collapse[hidden] {
-  display: none !important;
-}
-
-.app-navbar .navbar-nav {
-  align-items: stretch;
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  min-width: 0;
-}
-
-.app-navbar .navbar-nav .nav-link {
-  overflow-wrap: anywhere;
-  padding-inline: 0.65rem;
-}
-
-@media (min-width: 1200px) {
-  .app-navbar > .container-fluid {
-    flex-wrap: nowrap;
+/* Print utilities */
+@media print {
+  #app-sidebar,
+  #app-topbar,
+  #app-sidebar-backdrop {
+    display: none !important;
   }
-
-  .app-nav-toggle {
-    display: none;
-  }
-
-  .app-nav-collapse,
-  .app-nav-collapse[hidden] {
-    display: flex !important;
-    flex-basis: auto;
-    flex-grow: 1;
-    max-height: none;
-    overflow: visible;
-  }
-
-  .app-navbar .navbar-nav {
-    align-items: center;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 0.125rem 0.25rem;
-    justify-content: flex-end;
-    width: 100%;
+  body.has-app-sidebar {
+    padding-top: 0 !important;
+    padding-left: 0 !important;
   }
 }
