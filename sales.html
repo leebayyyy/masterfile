@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>POS Cashier Workspace</title>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script type="module" src="./js/page-auth.js?v=23"></script>
-    <script type="module" src="./js/sales.js?v=16"></script>
+    <script type="module" src="./js/sales.js?v=21"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous" />
-    <link href="./css/pos-layout.css?v=3" rel="stylesheet" />
+    <link href="./css/pos-layout.css?v=5" rel="stylesheet" />
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
   </head>
-  <body class="pos-body">
+  <body class="pos-body pos-terminal-active">
     <!-- Navbar (Dynamically rendered by page-auth.js based on active role) -->
     <nav class="navbar navbar-dark bg-dark sticky-top"></nav>
 
@@ -25,6 +26,7 @@
           <div class="d-flex align-items-center flex-wrap gap-2">
             <span class="badge bg-primary px-3 py-2 fw-semibold" id="selected-terminal-name">Loading Terminal...</span>
             <span class="text-light small">Cashier: <strong id="pos-cashier-name">---</strong></span>
+            <span class="badge bg-warning text-dark px-2 py-1 d-none" id="held-sale-status-badge">RESUMED HELD SALE</span>
           </div>
           <div class="d-flex align-items-center gap-2">
             <span class="badge bg-success px-2 py-1" id="pos-mode-badge">MODE: CASH (F3)</span>
@@ -33,11 +35,11 @@
         </div>
 
         <form id="sale-form" onsubmit="return false;">
-          <div class="row g-2 g-xl-3">
+          <div class="row g-2 gx-xl-3 pos-terminal-row">
             <!-- Left Column: Barcode Scanning, Scanned Items Table & Hotkey Toolbar -->
-            <div class="col-12 col-lg-8 col-xl-8 d-flex flex-column">
+            <div class="col-12 col-lg-8 col-xl-8 d-flex flex-column pos-left-column">
               <!-- Barcode Input Bar -->
-              <div class="pos-barcode-container mb-2">
+              <div class="pos-barcode-container mb-1 mb-lg-2">
                 <div class="input-group input-group-lg shadow-sm">
                   <span class="input-group-text bg-primary text-white fw-bold">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-upc-scan me-1" viewBox="0 0 16 16">
@@ -62,6 +64,31 @@
                   <button type="button" class="btn btn-outline-danger fw-bold px-2 px-md-3" id="btn-void-item" title="Void Selected Line Item [F4]">
                     <span class="pos-key-badge">F4</span> Void
                   </button>
+                  <button type="button" class="btn btn-outline-info fw-bold px-2 px-md-3 position-relative" id="btn-resume-sale" title="Resume Held Transaction [F6]">
+                    <span class="pos-key-badge">F6</span> Resume <span class="badge bg-danger rounded-pill d-none" id="held-count-badge">0</span>
+                  </button>
+                  <button type="button" class="btn btn-outline-warning fw-bold px-2 px-md-3" id="btn-hold-sale" title="Hold Current Sale [F7]">
+                    <span class="pos-key-badge">F7</span> Hold
+                  </button>
+                </div>
+                <!-- Quick Product Select / Fallback Entry Row -->
+                <div class="card p-2 bg-light border shadow-sm mt-2">
+                  <div class="row g-2 align-items-center">
+                    <div class="col-12 col-md-7">
+                      <select class="form-select form-select-sm" id="product_id" aria-label="Select product"></select>
+                    </div>
+                    <div class="col-6 col-md-2">
+                      <div class="input-group input-group-sm">
+                        <span class="input-group-text">Qty</span>
+                        <input class="form-control text-center fw-bold font-monospace" type="number" id="quantity" min="1" step="1" value="1" />
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                      <button type="button" class="btn btn-sm btn-success w-100 fw-bold" id="btn-add-item">
+                        + Add Item
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <div id="scan-feedback" class="pos-scan-feedback text-muted mt-1 px-1">
                   Ready to scan items.
@@ -69,19 +96,21 @@
               </div>
 
               <!-- Main Scanned Items Table Card -->
-              <div class="card pos-cart-card flex-grow-1 shadow-sm mb-2">
+              <div class="card pos-cart-card shadow-sm mb-1 mb-lg-2">
                 <div class="pos-cart-table-wrapper" id="cart-table">
                   <!-- Rendered dynamically by js/sales.js -->
                 </div>
               </div>
 
               <!-- Compact Keyboard Shortcut Toolbar -->
-              <div class="pos-hotkey-dock p-2 mb-2">
+              <div class="pos-hotkey-dock p-2 mb-0">
                 <span class="small fw-bold text-secondary me-2">SHORTCUTS:</span>
                 <button type="button" class="pos-hotkey-btn" id="btn-hk-lookup"><span class="pos-key-badge">F1</span> Lookup</button>
                 <button type="button" class="pos-hotkey-btn" id="btn-hk-qty"><span class="pos-key-badge">F2</span> Qty</button>
                 <button type="button" class="pos-hotkey-btn" id="btn-hk-cash"><span class="pos-key-badge">F3</span> Cash</button>
                 <button type="button" class="pos-hotkey-btn" id="btn-hk-void"><span class="pos-key-badge">F4</span> Void Item</button>
+                <button type="button" class="pos-hotkey-btn text-info" id="btn-hk-resume"><span class="pos-key-badge">F6</span> Resume</button>
+                <button type="button" class="pos-hotkey-btn text-warning" id="btn-hk-hold"><span class="pos-key-badge">F7</span> Hold</button>
                 <button type="button" class="pos-hotkey-btn" id="btn-hk-ar"><span class="pos-key-badge">F9</span> AR Credit</button>
                 <button type="button" class="pos-hotkey-btn text-warning" id="btn-hk-tender"><span class="pos-key-badge">F12</span> Checkout</button>
                 <button type="button" class="pos-hotkey-btn text-danger" id="btn-hk-cancel"><span class="pos-key-badge">Esc</span> Clear</button>
@@ -98,26 +127,21 @@
               </div>
 
               <!-- Payment Summary & Mode Card -->
-              <div class="card bg-white border shadow-sm p-3 mb-2 flex-grow-1">
-                <!-- Breakdown Lines -->
+              <div class="card bg-white border shadow-sm p-2 p-lg-3 mb-1 mb-lg-2 pos-payment-card">
+                <!-- Breakdown Lines (PH-standard 12% VAT-inclusive) -->
+                <div class="d-flex justify-content-between mb-2 text-success" id="promo-savings-row">
+                  <span class="fw-semibold">Promo Savings:</span>
+                  <strong class="font-monospace fs-6" id="pos-promo-savings">0.00</strong>
+                </div>
                 <div class="d-flex justify-content-between mb-2">
-                  <span class="text-muted fw-semibold">Subtotal:</span>
+                  <span class="text-muted fw-semibold">VATable Sales:</span>
                   <strong class="font-monospace fs-6" id="subtotal">0.00</strong>
                 </div>
-                <div class="d-flex justify-content-between mb-2">
-                  <span class="text-muted fw-semibold">Promo Savings:</span>
-                  <strong class="font-monospace text-success fs-6" id="pos-promo-savings">0.00</strong>
-                </div>
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <span class="text-muted fw-semibold">Tax Rate (%):</span>
-                  <div style="width: 85px;">
-                    <input type="number" class="form-control form-control-sm text-end font-monospace" id="tax_rate" min="0" step="0.01" value="0" />
-                  </div>
-                </div>
                 <div class="d-flex justify-content-between mb-3">
-                  <span class="text-muted fw-semibold">Tax Total:</span>
-                  <strong class="font-monospace fs-6" id="tax-total">0.00</strong>
+                  <span class="text-muted fw-semibold">12% VAT:</span>
+                  <strong class="font-monospace text-primary fs-6" id="tax-total">0.00</strong>
                 </div>
+                <input type="hidden" id="tax_rate" value="12" />
 
                 <hr class="my-2" />
 
@@ -165,7 +189,11 @@
                   </div>
                   <div class="mt-2 d-none" id="suki-points-field">
                     <label class="form-label small mb-1" for="suki_points_balance">Points Balance</label>
-                    <input class="form-control form-control-sm font-monospace" type="number" id="suki_points_balance" min="0" step="1" />
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text bg-light text-muted">Pts</span>
+                      <input class="form-control form-control-sm font-monospace bg-light fw-bold text-primary" type="text" id="suki_points_balance" readonly tabindex="-1" style="pointer-events: none;" placeholder="0" />
+                    </div>
+                    <small class="form-text text-muted">Points are automatically calculated by the server.</small>
                   </div>
                 </div>
 
@@ -176,7 +204,7 @@
               </div>
 
               <!-- Primary Action Checkout Buttons -->
-              <div class="d-grid gap-2">
+              <div class="d-grid gap-2 pos-payment-actions">
                 <button type="button" class="btn btn-success btn-lg py-3 fw-bold fs-4 shadow-sm" id="btn-open-tender">
                   CHECKOUT / TENDER [F12]
                 </button>
@@ -338,11 +366,10 @@
               <table class="table table-hover table-sm align-middle mb-0">
                 <thead class="table-light sticky-top">
                   <tr>
-                    <th>ID</th>
+                    <th style="width: 15%;">Product ID</th>
                     <th>Product Name</th>
-                    <th class="text-end">Price</th>
-                    <th class="text-end">Promo</th>
-                    <th class="text-center">Action</th>
+                    <th class="text-end" style="width: 25%;">Price</th>
+                    <th class="text-center" style="width: 20%;">Action</th>
                   </tr>
                 </thead>
                 <tbody id="product-search-results"></tbody>
@@ -415,6 +442,75 @@
           <div class="modal-footer bg-light py-2">
             <button class="btn btn-primary btn-sm fw-bold" id="btn-print-receipt">Print Receipt</button>
             <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HOLD TRANSACTION MODAL [F7] -->
+    <div class="modal fade" id="hold-transaction-modal" tabindex="-1" aria-labelledby="holdModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+          <div class="modal-header bg-warning text-dark py-2">
+            <h5 class="modal-title fs-6 fw-bold" id="holdModalLabel">HOLD CURRENT TRANSACTION</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body p-3">
+            <p class="small text-muted mb-3">
+              This will save the current cart and clear the register so you can serve the next customer. You can resume this exact cart anytime.
+            </p>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold" for="hold-customer-label">Customer / Hold Reference Note</label>
+              <input type="text" class="form-control" id="hold-customer-label" placeholder="e.g. Customer forgot wallet, Blue shirt, Table 3..." maxlength="200" />
+            </div>
+            <div class="card p-2 bg-light border-0 small">
+              <div class="d-flex justify-content-between mb-1">
+                <span class="text-muted">Items in cart:</span>
+                <span class="fw-bold" id="hold-item-count">0 items</span>
+              </div>
+              <div class="d-flex justify-content-between">
+                <span class="text-muted">Total amount:</span>
+                <span class="fw-bold text-primary" id="hold-total-amount">PHP 0.00</span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer bg-light py-2">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-warning btn-sm fw-bold px-3" id="btn-confirm-hold">Hold Transaction</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESUME HELD TRANSACTIONS MODAL [F6] -->
+    <div class="modal fade" id="resume-transaction-modal" tabindex="-1" aria-labelledby="resumeModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+          <div class="modal-header bg-primary text-white py-2">
+            <h5 class="modal-title fs-6 fw-bold" id="resumeModalLabel">RESUME HELD TRANSACTIONS</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body p-3">
+            <div class="table-responsive">
+              <table class="table table-hover table-striped align-middle table-sm mb-0">
+                <thead>
+                  <tr>
+                    <th>Ref #</th>
+                    <th>Customer / Note</th>
+                    <th>Time Held</th>
+                    <th class="text-center">Items</th>
+                    <th class="text-end">Total</th>
+                    <th class="text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="held-transactions-list">
+                  <tr><td colspan="6" class="text-center text-muted py-3">No held transactions.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="modal-footer bg-light py-2">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
           </div>
         </div>
       </div>

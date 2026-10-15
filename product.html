@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Products</title>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script type="module" src="./js/page-auth.js?v=21"></script>
     <script type="module" src="./js/product.js"></script>
     <link
@@ -72,6 +73,18 @@
               <div class="col-md-6">
                 <select class="form-select" id="unit_of_measure_id" required>
                   <option value="">-- SELECT UNIT OF MEASURE --</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <div class="form-control bg-light text-muted fw-bold" style="cursor: not-allowed;" title="Static price tier">Retail</div>
+                <input type="hidden" id="price_tier" value="Retail" />
+              </div>
+              <div class="col-md-6">
+                <input type="number" step="0.01" min="0" class="form-control" id="wholesale_price" placeholder="Wholesale Price" />
+              </div>
+              <div class="col-md-12">
+                <select class="form-select" id="promo_id">
+                  <option value="">-- NO PROMOTION --</option>
                 </select>
               </div>
             </div>

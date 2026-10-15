@@ -1,5 +1,6 @@
 import { updateModal } from "./modules/wholesale_price-update.js";
 import { deleteModal } from "./modules/wholesale_price-delete.js";
+import { showToast, showError } from "./swal-helper.js";
 
 const baseApiUrl = new URL("../api", import.meta.url).href;
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
@@ -28,7 +29,7 @@ const loadProduct = async () => {
       select.appendChild(option);
     });
   } else {
-    alert("Error!");
+    showError("Unable to load product list.");
   }
 };
 
@@ -39,7 +40,7 @@ const displayRecords = async () => {
   if (response.status == 200) {
     displayRecordsTable(response.data);
   } else {
-    alert("Error!");
+    showError("Unable to load wholesale prices.");
   }
 };
 
@@ -109,8 +110,8 @@ const insertWholesalePrice = async () => {
   if (response.data == 1) {
     displayRecords();
     document.getElementById("btn-submit").closest("#main-div").querySelectorAll("input, select").forEach((el) => (el.value = ""));
-    alert("Wholesale Price successfully saved!");
+    showToast("Wholesale Price successfully saved!", "success");
   } else {
-    alert("ERROR");
+    showError("Failed to save wholesale price.");
   }
 };

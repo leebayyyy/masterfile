@@ -50,7 +50,7 @@ if ($operation === 'summary') {
     "SELECT COUNT(*) AS count, COALESCE(SUM(balance), 0) AS balance
      FROM tblar_invoice
      WHERE status <> 'Pending' AND COALESCE(balance, 0) > 0
-       AND due_date < CURDATE()"
+       AND due_date < CURRENT_DATE"
   )->fetch(PDO::FETCH_ASSOC);
   $ar['overdue_invoices'] = (int)$overdue['count'];
   $ar['overdue_balance'] = $overdue['balance'];
@@ -76,7 +76,7 @@ if ($operation === 'summary') {
   $dailySalesStmt = $conn->prepare(
     "SELECT s.sale_id, s.sale_date, s.sale_type, s.total_amount, s.balance,
             COALESCE((SELECT SUM(sd.promo_discount) FROM tblsales_detail sd WHERE sd.sale_id=s.sale_id), 0) AS promotion_discount,
-            (SELECT GROUP_CONCAT(DISTINCT pr.promo_name ORDER BY pr.promo_name SEPARATOR ', ')
+            (SELECT STRING_AGG(DISTINCT pr.promo_name, ', ' ORDER BY pr.promo_name)
              FROM tblsales_detail sd INNER JOIN tblpromo pr ON pr.promo_id=sd.promo_id
              WHERE sd.sale_id=s.sale_id) AS promotions_applied,
             t.terminal_name, CONCAT(u.first_name, ' ', u.last_name) AS cashier,
@@ -107,18 +107,18 @@ if ($operation === 'summary') {
             i.invoice_amount, i.balance, i.status, c.customer_name,
             CASE
               WHEN i.due_date IS NULL THEN 'No due date'
-              WHEN i.due_date < CURDATE() THEN 'Overdue'
-              WHEN i.due_date = CURDATE() THEN 'Due today'
+              WHEN i.due_date < CURRENT_DATE THEN 'Overdue'
+              WHEN i.due_date = CURRENT_DATE THEN 'Due today'
               ELSE 'Current'
             END AS collection_status,
             CASE
-              WHEN i.due_date < CURDATE() THEN DATEDIFF(CURDATE(), i.due_date)
+              WHEN i.due_date < CURRENT_DATE THEN (CURRENT_DATE - i.due_date)
               ELSE 0
             END AS days_overdue
      FROM tblar_invoice i
      INNER JOIN tblar_customers c ON c.ar_customer_id=i.ar_customer_id
      WHERE i.status <> 'Pending' AND COALESCE(i.balance, 0) > 0
-     ORDER BY (i.due_date < CURDATE()) DESC, i.due_date ASC, c.customer_name, i.invoice_number"
+     ORDER BY (CASE WHEN i.due_date < CURRENT_DATE THEN 1 ELSE 0 END) DESC, i.due_date ASC, c.customer_name, i.invoice_number"
   )->fetchAll(PDO::FETCH_ASSOC);
 
   $customerBalances = $conn->query(

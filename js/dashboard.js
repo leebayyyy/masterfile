@@ -220,7 +220,7 @@ function renderAdminDashboard(container, user, summary) {
                 </div>
                 <span class="btn btn-sm btn-outline-primary px-3">Payments &rarr;</span>
               </a>
-              <a href="ar_transactions.html" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3">
+              <a href="payment.html" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3">
                 <div>
                   <div class="fw-semibold text-dark">AR Invoices &amp; Credit Sales</div>
                   <div class="text-muted small">Generate billing invoices and audit customer debt transactions</div>
@@ -395,7 +395,7 @@ function renderManagerDashboard(container, user, summary) {
                 </a>
               </div>
               <div class="col-6 col-sm-4">
-                <a href="ar_transactions.html" class="btn btn-outline-primary w-100 text-start p-3 h-100 d-flex flex-column justify-content-between">
+                <a href="payment.html" class="btn btn-outline-primary w-100 text-start p-3 h-100 d-flex flex-column justify-content-between">
                   <div class="fw-bold">AR Invoices</div>
                   <small class="text-muted">Customer transactions</small>
                 </a>
@@ -504,7 +504,7 @@ function renderArStaffDashboard(container, user, summary) {
           <div class="small text-muted">Credit purchases from the POS register requiring formal AR invoice creation.</div>
         </div>
       </div>
-      <a href="ar_transactions.html" class="btn btn-warning btn-sm fw-bold">Process Invoices in AR &rarr;</a>
+      <a href="payment.html" class="btn btn-warning btn-sm fw-bold">Process Invoices in AR &rarr;</a>
     </div>
     ` : ""}
 
@@ -598,7 +598,7 @@ function renderArStaffDashboard(container, user, summary) {
         <div class="app-card p-3 mb-0 h-100">
           <h3 class="h6 fw-bold mb-2">Invoices &amp; Transactions</h3>
           <p class="text-muted small mb-3">Generate official invoices from POS sales and review customer ledgers.</p>
-          <a href="ar_transactions.html" class="btn btn-outline-primary btn-sm w-100">Open Invoices &rarr;</a>
+          <a href="payment.html" class="btn btn-outline-primary btn-sm w-100">Open Invoices &rarr;</a>
         </div>
       </div>
       <div class="col-12 col-md-4">

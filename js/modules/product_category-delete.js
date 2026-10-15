@@ -1,32 +1,23 @@
+import { showToast, showError, showConfirm } from "../swal-helper.js";
+
 export const deleteModal = async (categoryId, refreshDisplay) => {
-  document.getElementById("blank-modal-title").innerText = "Confirm Delete";
-  document.getElementById("blank-main-div").innerHTML = `<p>Delete this product category? This cannot be undone.</p>`;
-
-  const modalFooter = document.getElementById("blank-modal-footer");
-  modalFooter.innerHTML = `
-      <button type="button" class="btn btn-danger btn-sm w-100 me-2 btn-confirm">Delete</button>
-      <button type="button" class="btn btn-secondary btn-sm w-100" data-bs-dismiss="modal">Close</button>
-    `;
-
-  const myModal = new bootstrap.Modal(document.getElementById("blank-modal"), {
-    keyboard: true,
-    backdrop: "static",
+  const res = await showConfirm({
+    title: "Delete Category?",
+    text: "Delete this product category? This cannot be undone.",
+    confirmButtonText: "Yes, Delete",
+    isDestructive: true
   });
+  if (!res.isConfirmed) return;
 
-  modalFooter.querySelector(".btn-confirm").addEventListener("click", async () => {
-    const result = await deleteProductCategory(categoryId);
-    if (result == 1) {
-      refreshDisplay();
-      alert("Product Category has been deleted.");
-      myModal.hide();
-    } else if (result && result.message) {
-      alert(result.message);
-    } else {
-      alert("ERROR");
-    }
-  });
-
-  myModal.show();
+  const result = await deleteProductCategory(categoryId);
+  if (result == 1) {
+    refreshDisplay();
+    showToast("Product Category has been deleted.", "success");
+  } else if (result && result.message) {
+    showError(result.message);
+  } else {
+    showError("Failed to delete product category.");
+  }
 };
 
 const deleteProductCategory = async (categoryId) => {

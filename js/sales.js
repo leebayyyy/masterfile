@@ -1,4 +1,5 @@
 import { getSession } from "./auth.js?v=3";
+import { showToast, showError, showSuccess, showConfirm } from "./swal-helper.js";
 
 const apiUrl = new URL("../api/sales.php", import.meta.url).href;
 let products = [];
@@ -10,6 +11,9 @@ let activeCartIndex = -1;
 let isSubmitting = false;
 let allSalesData = [];
 let selectedReceiptSaleId = null;
+let activeHeldId = null;
+let activeHoldRef = null;
+let allHeldTransactions = [];
 
 document.addEventListener("DOMContentLoaded", () => {
   // Cashier View Switching Listener (dispatched from page-auth navbar)
@@ -62,15 +66,40 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-open-search")?.addEventListener("click", openProductSearchModal);
   document.getElementById("btn-open-qty")?.addEventListener("click", openQuantityModal);
   document.getElementById("btn-confirm-qty")?.addEventListener("click", confirmQuantityOverride);
+  document.getElementById("btn-void-item")?.addEventListener("click", voidActiveItem);
+  document.getElementById("btn-hold-sale")?.addEventListener("click", openHoldModal);
+  document.getElementById("btn-confirm-hold")?.addEventListener("click", executeHold);
+  document.getElementById("btn-resume-sale")?.addEventListener("click", openResumeModal);
 
   // Hotkey Dock Buttons
   document.getElementById("btn-hk-lookup")?.addEventListener("click", openProductSearchModal);
   document.getElementById("btn-hk-qty")?.addEventListener("click", openQuantityModal);
   document.getElementById("btn-hk-cash")?.addEventListener("click", () => setSaleMode("Cash"));
   document.getElementById("btn-hk-void")?.addEventListener("click", voidActiveItem);
+  document.getElementById("btn-hk-resume")?.addEventListener("click", openResumeModal);
+  document.getElementById("btn-hk-hold")?.addEventListener("click", openHoldModal);
   document.getElementById("btn-hk-ar")?.addEventListener("click", () => setSaleMode("AR"));
   document.getElementById("btn-hk-tender")?.addEventListener("click", openTenderModal);
   document.getElementById("btn-hk-cancel")?.addEventListener("click", requestClearCart);
+
+  // Product Dropdown & Auto Quantity input (Task 6)
+  document.getElementById("product_id")?.addEventListener("change", (e) => {
+    if (e.target.value) {
+      const qtyInput = document.getElementById("quantity");
+      if (qtyInput) {
+        qtyInput.value = 1;
+        qtyInput.focus();
+        qtyInput.select();
+      }
+    }
+  });
+
+  document.getElementById("quantity")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addItemFromDropdown();
+    }
+  });
 
   // Clear Cart Confirmation Modal Button
   document.getElementById("btn-confirm-clear-cart")?.addEventListener("click", () => {
@@ -80,6 +109,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Product Search Query Input
   document.getElementById("product-search-query")?.addEventListener("input", filterProductSearchResults);
+  document.getElementById("product-search-query")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const firstBtn = document.querySelector("#product-search-results .select-product-btn");
+      if (firstBtn) {
+        firstBtn.click();
+      }
+    }
+  });
 
   // Recent Sales Filter & Refresh
   document.getElementById("sales-search-filter")?.addEventListener("input", filterRecentSales);
@@ -113,7 +151,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Modal Close Focus Restoration (Returns focus to barcode input)
-  ["tender-modal", "product-search-modal", "quantity-modal", "receipt-modal", "clear-cart-confirm-modal"].forEach((modalId) => {
+  ["tender-modal", "product-search-modal", "quantity-modal", "receipt-modal", "clear-cart-confirm-modal", "hold-transaction-modal", "resume-transaction-modal"].forEach((modalId) => {
     const el = document.getElementById(modalId);
     el?.addEventListener("hidden.bs.modal", () => {
       focusBarcodeInput();
@@ -218,16 +256,19 @@ const loadFormData = async () => {
       "product_id",
       null,
       "-- SELECT PRODUCT --",
-      (p) => `${p.product_name} (P${Number(p.price || 0).toFixed(2)}${Number(p.promo_rate) > 0 ? `, ${Number(p.promo_rate).toFixed(0)}% off` : ""})`
+      (p) => `${p.product_id} — ${p.product_name} (₱${Number(p.price || 0).toFixed(2)})`
     );
 
     // If Cashier and register is closed, auto-open register for fast workflow
     if (currentUser?.role_name === "Cashier") {
       startSale();
     }
+
+    // Load active held transactions count
+    await updateHeldTransactionsBadge();
   } catch (error) {
     console.error(error);
-    alert("Unable to load sales options.");
+    showError("Unable to load sales options.");
   }
 };
 
@@ -258,6 +299,9 @@ const escapeHtml = (value) =>
 const startSale = () => {
   cart = [];
   activeCartIndex = -1;
+  activeHeldId = null;
+  activeHoldRef = null;
+  document.getElementById("held-sale-status-badge")?.classList.add("d-none");
   document.getElementById("sale-form")?.reset();
   const taxRateInput = document.getElementById("tax_rate");
   if (taxRateInput) taxRateInput.value = 0;
@@ -283,6 +327,9 @@ const requestClearCart = () => {
 const closeSale = () => {
   cart = [];
   activeCartIndex = -1;
+  activeHeldId = null;
+  activeHoldRef = null;
+  document.getElementById("held-sale-status-badge")?.classList.add("d-none");
   renderCart();
   showScanFeedback("Register cleared.");
   focusBarcodeInput();
@@ -339,9 +386,9 @@ const handleBarcodeScan = () => {
   }
 
   if (matched) {
-    addProductToCart(matched, 1, 0);
+    addProductToCart(matched, 1);
     input.value = "";
-    showScanFeedback(`Added: ${matched.product_name} (P${Number(matched.price).toFixed(2)})`);
+    showScanFeedback(`Added: ${matched.product_name} (₱${Number(matched.price).toFixed(2)})`);
   } else {
     showScanFeedback(`Item "${rawQuery}" not found. Press F1 to lookup.`, true);
   }
@@ -351,36 +398,35 @@ const handleBarcodeScan = () => {
 const addItemFromDropdown = () => {
   const select = document.getElementById("product_id");
   const qtyInput = document.getElementById("quantity");
-  const discInput = document.getElementById("discount");
 
   const product = products.find((p) => String(p.product_id) === select?.value);
   const quantity = Number(qtyInput?.value || 1);
-  const discount = Number(discInput?.value || 0);
 
-  if (!product || quantity <= 0 || discount < 0) {
-    alert("Select a product and enter a valid quantity.");
+  if (!product || quantity <= 0) {
+    showScanFeedback("Select a product and enter a valid quantity.", true);
     return;
   }
-  addProductToCart(product, quantity, discount);
+  addProductToCart(product, quantity);
   if (select) select.value = "";
   if (qtyInput) qtyInput.value = 1;
-  if (discInput) discInput.value = 0;
   focusBarcodeInput();
 };
 
-const addProductToCart = (product, quantity = 1, manualDiscount = 0) => {
+const addProductToCart = (product, quantity = 1) => {
+  const qty = Number(quantity) > 0 ? Number(quantity) : 1;
   const existingIndex = cart.findIndex((item) => item.productId === Number(product.product_id));
   if (existingIndex >= 0) {
-    cart[existingIndex].quantity += quantity;
-    cart[existingIndex].discount += manualDiscount;
+    cart[existingIndex].quantity += qty;
+    cart[existingIndex].promoId = product.promo_id ? Number(product.promo_id) : (cart[existingIndex].promoId || null);
+    cart[existingIndex].promoName = product.promo_name || cart[existingIndex].promoName || "";
+    cart[existingIndex].promoRate = Number(product.promo_rate !== undefined ? product.promo_rate : (cart[existingIndex].promoRate || 0));
     activeCartIndex = existingIndex;
   } else {
     cart.push({
       productId: Number(product.product_id),
       productName: product.product_name,
       unitPrice: Number(product.price || 0),
-      quantity,
-      discount: manualDiscount,
+      quantity: qty,
       promoId: product.promo_id ? Number(product.promo_id) : null,
       promoName: product.promo_name || "",
       promoRate: Number(product.promo_rate || 0),
@@ -388,6 +434,15 @@ const addProductToCart = (product, quantity = 1, manualDiscount = 0) => {
     activeCartIndex = cart.length - 1;
   }
   renderCart();
+
+  // Task 6: Automatically focus and select quantity input for the active item
+  setTimeout(() => {
+    const activeQtyInput = document.querySelector(`.cart-qty-input[data-index="${activeCartIndex}"]`);
+    if (activeQtyInput && !isAnyModalOpen()) {
+      activeQtyInput.focus();
+      activeQtyInput.select();
+    }
+  }, 60);
 };
 
 /* ==========================================================================
@@ -409,12 +464,17 @@ const openProductSearchModal = () => {
 
 const filterProductSearchResults = () => {
   const query = (document.getElementById("product-search-query")?.value || "").toLowerCase().trim();
-  const filtered = products.filter(
-    (p) =>
-      String(p.product_id).includes(query) ||
-      p.product_name.toLowerCase().includes(query)
+  if (!query) {
+    renderProductSearchResults(products);
+    return;
+  }
+  // Keyed on Product ID: exact product_id match first, then product_id prefix, then product_name match
+  const exactIdMatches = products.filter((p) => String(p.product_id) === query);
+  const prefixIdMatches = products.filter((p) => String(p.product_id).startsWith(query) && String(p.product_id) !== query);
+  const nameMatches = products.filter(
+    (p) => !String(p.product_id).startsWith(query) && p.product_name.toLowerCase().includes(query)
   );
-  renderProductSearchResults(filtered);
+  renderProductSearchResults([...exactIdMatches, ...prefixIdMatches, ...nameMatches]);
 };
 
 const renderProductSearchResults = (items) => {
@@ -422,7 +482,7 @@ const renderProductSearchResults = (items) => {
   if (!tbody) return;
 
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No matching products found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">No matching products found.</td></tr>';
     return;
   }
 
@@ -431,14 +491,9 @@ const renderProductSearchResults = (items) => {
     .map(
       (p) => `
       <tr>
-        <td class="font-monospace fw-bold text-muted">${p.product_id}</td>
+        <td class="font-monospace fw-bold text-primary">#${p.product_id}</td>
         <td class="fw-semibold">${escapeHtml(p.product_name)}</td>
-        <td class="text-end font-monospace">P${Number(p.price).toFixed(2)}</td>
-        <td class="text-end small">${
-          Number(p.promo_rate) > 0
-            ? `<span class="badge bg-success-subtle text-success border border-success-subtle">${Number(p.promo_rate).toFixed(0)}% off</span>`
-            : "—"
-        }</td>
+        <td class="text-end font-monospace">₱${Number(p.price).toFixed(2)}</td>
         <td class="text-center">
           <button type="button" class="btn btn-sm btn-primary py-0 px-2 select-product-btn" data-pid="${p.product_id}">
             Select [Enter]
@@ -449,14 +504,43 @@ const renderProductSearchResults = (items) => {
     .join("");
 
   tbody.querySelectorAll(".select-product-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const pid = btn.dataset.pid;
       const product = products.find((p) => String(p.product_id) === pid);
-      if (product) {
-        addProductToCart(product, 1, 0);
-        showScanFeedback(`Selected: ${product.product_name}`);
-      }
       bootstrap.Modal.getInstance(document.getElementById("product-search-modal"))?.hide();
+      if (product) {
+        let qty = 1;
+        if (typeof Swal !== "undefined") {
+          const { value: qtyVal } = await Swal.fire({
+            title: `Add ${product.product_name}`,
+            text: `Product ID: #${product.product_id} | Unit Price: ₱${Number(product.price).toFixed(2)}`,
+            input: "number",
+            inputLabel: "Enter Quantity",
+            inputValue: 1,
+            inputAttributes: {
+              min: "1",
+              step: "1",
+              autofocus: "autofocus"
+            },
+            showCancelButton: true,
+            confirmButtonText: "Add to Cart",
+            confirmButtonColor: "#198754",
+            cancelButtonText: "Cancel",
+            inputValidator: (val) => {
+              if (!val || isNaN(val) || parseInt(val, 10) < 1) {
+                return "Please enter a valid quantity of 1 or more!";
+              }
+            }
+          });
+          if (!qtyVal) {
+            focusBarcodeInput();
+            return;
+          }
+          qty = parseInt(qtyVal, 10) || 1;
+        }
+        addProductToCart(product, qty);
+        showScanFeedback(`Added: ${product.product_name} x ${qty}`);
+      }
       focusBarcodeInput();
     });
   });
@@ -494,7 +578,7 @@ const confirmQuantityOverride = () => {
   const inputEl = document.getElementById("qty-override-input");
   const newQty = Number(inputEl?.value || 0);
   if (newQty <= 0) {
-    alert("Quantity must be greater than zero.");
+    showError("Quantity must be greater than zero.");
     return;
   }
   const targetIndex = activeCartIndex >= 0 && activeCartIndex < cart.length ? activeCartIndex : cart.length - 1;
@@ -526,34 +610,71 @@ const voidActiveItem = () => {
 /* ==========================================================================
    Cart Rendering & Math Engine
    ========================================================================== */
-const renderCart = () => {
-  const subtotal = cart.reduce((sum, item) => {
-    const lineAmount = item.quantity * item.unitPrice;
-    const promoDiscount = Math.round(lineAmount * item.promoRate) / 100;
-    return sum + (lineAmount - item.discount - promoDiscount);
-  }, 0);
+const updateCartTotalsOnly = () => {
+  let grossSubtotal = 0;
+  let totalPromoSavings = 0;
 
-  const promoSavings = cart.reduce((sum, item) => {
-    const lineAmount = item.quantity * item.unitPrice;
-    return sum + Math.round(lineAmount * item.promoRate) / 100 + item.discount;
-  }, 0);
+  cart.forEach((item, index) => {
+    const grossLine = Math.round(item.quantity * item.unitPrice * 100) / 100;
+    const promoDisc = item.promoRate > 0 ? Math.round(((grossLine * item.promoRate) / 100) * 100) / 100 : 0;
+    const lineTotal = Math.round((grossLine - promoDisc) * 100) / 100;
+    grossSubtotal += grossLine;
+    totalPromoSavings += promoDisc;
 
-  const taxRate = Number(document.getElementById("tax_rate")?.value || 0);
-  const tax = Math.round(subtotal * taxRate) / 100;
-  const grandTotal = Math.round((subtotal + tax) * 100) / 100;
+    const promoEl = document.querySelector(`[data-row-index="${index}"] .row-promo-discount`);
+    const lineTotalEl = document.querySelector(`[data-row-index="${index}"] .row-line-total`);
+    if (promoEl) promoEl.textContent = promoDisc > 0 ? `-₱${promoDisc.toFixed(2)}` : "-";
+    if (lineTotalEl) lineTotalEl.textContent = `₱${lineTotal.toFixed(2)}`;
+  });
 
-  // Update display values
+  const roundedPromoSavings = Math.round(totalPromoSavings * 100) / 100;
+  const grandTotal = Math.round((grossSubtotal - roundedPromoSavings) * 100) / 100;
+  const vatableSales = Math.round((grandTotal / 1.12) * 100) / 100;
+  const tax = Math.round((grandTotal - vatableSales) * 100) / 100;
+
+  const promoSavingsEl = document.getElementById("pos-promo-savings");
   const subtotalEl = document.getElementById("subtotal");
   const taxEl = document.getElementById("tax-total");
   const totalHidden = document.getElementById("total-amount");
   const grandTotalEl = document.getElementById("pos-grand-total");
-  const promoSavingsEl = document.getElementById("pos-promo-savings");
 
-  if (subtotalEl) subtotalEl.textContent = subtotal.toFixed(2);
+  if (promoSavingsEl) promoSavingsEl.textContent = roundedPromoSavings > 0 ? `-₱${roundedPromoSavings.toFixed(2)}` : "0.00";
+  if (subtotalEl) subtotalEl.textContent = vatableSales.toFixed(2);
   if (taxEl) taxEl.textContent = tax.toFixed(2);
   if (totalHidden) totalHidden.value = grandTotal.toFixed(2);
   if (grandTotalEl) grandTotalEl.textContent = `PHP ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  if (promoSavingsEl) promoSavingsEl.textContent = promoSavings.toFixed(2);
+
+  updateCreditEligibility();
+};
+
+const renderCart = () => {
+  let grossSubtotal = 0;
+  let totalPromoSavings = 0;
+
+  cart.forEach((item) => {
+    const grossLine = Math.round(item.quantity * item.unitPrice * 100) / 100;
+    const promoDisc = item.promoRate > 0 ? Math.round(((grossLine * item.promoRate) / 100) * 100) / 100 : 0;
+    grossSubtotal += grossLine;
+    totalPromoSavings += promoDisc;
+  });
+
+  const roundedPromoSavings = Math.round(totalPromoSavings * 100) / 100;
+  const grandTotal = Math.round((grossSubtotal - roundedPromoSavings) * 100) / 100;
+  const vatableSales = Math.round((grandTotal / 1.12) * 100) / 100;
+  const tax = Math.round((grandTotal - vatableSales) * 100) / 100;
+
+  // Update display values
+  const promoSavingsEl = document.getElementById("pos-promo-savings");
+  const subtotalEl = document.getElementById("subtotal");
+  const taxEl = document.getElementById("tax-total");
+  const totalHidden = document.getElementById("total-amount");
+  const grandTotalEl = document.getElementById("pos-grand-total");
+
+  if (promoSavingsEl) promoSavingsEl.textContent = roundedPromoSavings > 0 ? `-₱${roundedPromoSavings.toFixed(2)}` : "0.00";
+  if (subtotalEl) subtotalEl.textContent = vatableSales.toFixed(2);
+  if (taxEl) taxEl.textContent = tax.toFixed(2);
+  if (totalHidden) totalHidden.value = grandTotal.toFixed(2);
+  if (grandTotalEl) grandTotalEl.textContent = `PHP ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   // Render Table
   const tableContainer = document.getElementById("cart-table");
@@ -567,31 +688,43 @@ const renderCart = () => {
             <tr>
               <th style="width: 5%;">#</th>
               <th>Product Description</th>
-              <th class="text-center" style="width: 10%;">Qty</th>
-              <th class="text-end" style="width: 15%;">Price</th>
-              <th class="text-end" style="width: 15%;">Promo/Disc</th>
-              <th class="text-end" style="width: 15%;">Total</th>
-              <th class="text-center" style="width: 10%;">Action</th>
+              <th class="text-center" style="width: 14%;">Qty</th>
+              <th class="text-end" style="width: 16%;">Price</th>
+              <th class="text-end" style="width: 16%;">Promo</th>
+              <th class="text-end" style="width: 18%;">Total</th>
+              <th class="text-center" style="width: 8%;">Action</th>
             </tr>
           </thead>
           <tbody>
             ${cart
               .map((item, index) => {
-                const lineAmount = item.quantity * item.unitPrice;
-                const promoDiscount = Math.round(lineAmount * item.promoRate) / 100;
-                const lineTotal = lineAmount - item.discount - promoDiscount;
+                const grossLine = Math.round(item.quantity * item.unitPrice * 100) / 100;
+                const promoDisc = item.promoRate > 0 ? Math.round(((grossLine * item.promoRate) / 100) * 100) / 100 : 0;
+                const lineTotal = Math.round((grossLine - promoDisc) * 100) / 100;
                 const isActive = index === activeCartIndex;
+                const promoText = promoDisc > 0 ? `-₱${promoDisc.toFixed(2)}` : "-";
+                const promoBadge = promoDisc > 0 ? `<br><small class="text-success fw-semibold font-monospace">${escapeHtml(item.promoName || "Promo")} (${item.promoRate}% off)</small>` : "";
                 return `
                   <tr class="${isActive ? "table-active" : ""}" data-row-index="${index}">
                     <td class="num-cell text-muted">${index + 1}</td>
                     <td class="fw-semibold">
-                      ${escapeHtml(item.productName)}
-                      ${item.promoRate > 0 ? `<br><small class="text-success">${escapeHtml(item.promoName)} (${item.promoRate}% off)</small>` : ""}
+                      <span class="font-monospace text-primary me-1">#${item.productId}</span> ${escapeHtml(item.productName)}${promoBadge}
                     </td>
-                    <td class="text-center num-cell fw-bold">${item.quantity}</td>
-                    <td class="text-end num-cell">P${item.unitPrice.toFixed(2)}</td>
-                    <td class="text-end num-cell text-success">${promoDiscount > 0 || item.discount > 0 ? `-P${(promoDiscount + item.discount).toFixed(2)}` : "—"}</td>
-                    <td class="text-end num-cell fw-bold">P${lineTotal.toFixed(2)}</td>
+                    <td class="text-center num-cell">
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        class="form-control form-control-sm text-center fw-bold cart-qty-input d-inline-block font-monospace"
+                        data-index="${index}"
+                        value="${item.quantity}"
+                        style="width: 65px; height: 28px; padding: 2px 4px;"
+                        aria-label="Item quantity"
+                      />
+                    </td>
+                    <td class="text-end num-cell">₱${item.unitPrice.toFixed(2)}</td>
+                    <td class="text-end num-cell text-success font-monospace row-promo-discount">${promoText}</td>
+                    <td class="text-end num-cell fw-bold row-line-total">₱${lineTotal.toFixed(2)}</td>
                     <td class="text-center">
                       <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 remove-item-btn" data-index="${index}" title="Remove line item">
                         &times;
@@ -606,7 +739,7 @@ const renderCart = () => {
       // Row Selection Click
       tableContainer.querySelectorAll("tbody tr").forEach((row) => {
         row.addEventListener("click", (e) => {
-          if (!e.target.closest(".remove-item-btn")) {
+          if (!e.target.closest(".remove-item-btn") && !e.target.closest(".cart-qty-input")) {
             activeCartIndex = Number(row.dataset.rowIndex);
             renderCart();
           }
@@ -624,6 +757,36 @@ const renderCart = () => {
           focusBarcodeInput();
         });
       });
+
+      // Inline Quantity Input Handlers (Task 6)
+      tableContainer.querySelectorAll(".cart-qty-input").forEach((input) => {
+        const idx = Number(input.dataset.index);
+        input.addEventListener("click", (e) => e.stopPropagation());
+        input.addEventListener("input", (e) => {
+          const val = Number(e.target.value);
+          if (val > 0) {
+            cart[idx].quantity = val;
+            updateCartTotalsOnly();
+          }
+        });
+        input.addEventListener("change", (e) => {
+          const val = Number(e.target.value);
+          if (!val || val <= 0) {
+            e.target.value = 1;
+            cart[idx].quantity = 1;
+          } else {
+            cart[idx].quantity = val;
+          }
+          renderCart();
+        });
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            renderCart();
+            focusBarcodeInput();
+          }
+        });
+      });
     }
   }
 
@@ -635,7 +798,7 @@ const renderCart = () => {
    ========================================================================== */
 const openTenderModal = () => {
   if (!cart.length) {
-    alert("Add at least one product before proceeding to tender.");
+    showError("Add at least one product before proceeding to tender.");
     focusBarcodeInput();
     return;
   }
@@ -646,7 +809,7 @@ const openTenderModal = () => {
   if (isAr) {
     const creditCheck = updateCreditEligibility();
     if (!creditCheck?.eligible) {
-      alert("This customer does not have enough available credit for this sale.");
+      showError("This customer does not have enough available credit for this sale.");
       return;
     }
   }
@@ -740,7 +903,7 @@ const executeCheckout = async () => {
   if (isSubmitting) return;
 
   if (!cart.length) {
-    alert("Add at least one product.");
+    showError("Add at least one product.");
     return;
   }
 
@@ -750,18 +913,18 @@ const executeCheckout = async () => {
   if (!isAr) {
     const tendered = Number(document.getElementById("tender-cash-input")?.value || 0);
     if (tendered < grandTotal && grandTotal > 0) {
-      alert("Cash tendered is less than the total amount due.");
+      showError("Cash tendered is less than the total amount due.");
       document.getElementById("tender-cash-input")?.focus();
       return;
     }
   } else {
     if (!(await refreshCreditEligibility())) {
-      alert("Unable to verify this customer's credit eligibility.");
+      showError("Unable to verify this customer's credit eligibility.");
       return;
     }
     const creditCheck = updateCreditEligibility();
     if (!creditCheck?.eligible) {
-      alert("Customer credit limit exceeded.");
+      showError("Customer credit limit exceeded.");
       return;
     }
   }
@@ -775,6 +938,7 @@ const executeCheckout = async () => {
   }
 
   const data = {
+    heldId: activeHeldId,
     saleType: document.getElementById("sale_type")?.value,
     paymentMethodId: document.getElementById("sale_payment_method_id")?.value,
     taxRate: document.getElementById("tax_rate")?.value,
@@ -795,14 +959,25 @@ const executeCheckout = async () => {
       bootstrap.Modal.getInstance(document.getElementById("tender-modal"))?.hide();
       showScanFeedback(`Sale #${response.data.saleId} completed successfully!`);
       showReceipt(response.data.saleId);
+      activeHeldId = null;
+      activeHoldRef = null;
+      document.getElementById("held-sale-status-badge")?.classList.add("d-none");
       closeSale();
       loadSales();
+      updateHeldTransactionsBadge();
+
+      // Task 8: Live update suki points across UI without page reload
+      await loadFormData();
+      if (response.data.newSukiPointsBalance !== undefined && response.data.newSukiPointsBalance !== null) {
+        const ptsEl = document.getElementById("suki_points_balance");
+        if (ptsEl) ptsEl.value = Number(response.data.newSukiPointsBalance).toFixed(0);
+      }
     } else {
-      alert(response.data.message || "Unable to record sale.");
+      showError(response.data.message || "Unable to record sale.");
     }
   } catch (error) {
     console.error(error);
-    alert(error.response?.data?.message || "Transaction failed. Please check network connection.");
+    showError(error.response?.data?.message || "Transaction failed. Please check network connection.");
   } finally {
     isSubmitting = false;
     if (submitBtn) {
@@ -838,6 +1013,16 @@ const handleGlobalShortcuts = (e) => {
     case "F4":
       e.preventDefault();
       voidActiveItem();
+      break;
+
+    case "F6":
+      e.preventDefault();
+      openResumeModal();
+      break;
+
+    case "F7":
+      e.preventDefault();
+      openHoldModal();
       break;
 
     case "F8":
@@ -905,7 +1090,7 @@ const updateSukiFields = () => {
   document.getElementById("suki-ar-field")?.classList.toggle("d-none", !isAr);
   if (pointsField) pointsField.classList.toggle("d-none", isAr || status !== "Has");
   if (registeredCardField) registeredCardField.classList.toggle("d-none", isAr || status !== "Has");
-  if (pointsInput) pointsInput.required = !isAr && status === "Has";
+  if (pointsInput) pointsInput.required = false;
 
   if (isAr) {
     if (registeredCardSelect) registeredCardSelect.value = "";
@@ -955,18 +1140,12 @@ const updateCreditEligibility = () => {
   const creditLimit = Number(customer.credit_limit || 0);
   const exposure = Number(customer.credit_exposure || 0);
   const available = creditLimit - exposure;
-  const subtotal = cart.reduce((sum, item) => {
-    const lineAmount = item.quantity * item.unitPrice;
-    const promoDiscount = Math.round(lineAmount * item.promoRate) / 100;
-    return sum + lineAmount - item.discount - promoDiscount;
-  }, 0);
-  const tax = Math.round(subtotal * Number(document.getElementById("tax_rate")?.value || 0)) / 100;
-  const estimatedTotal = Math.round((subtotal + tax) * 100) / 100;
+  const estimatedTotal = cart.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
   const eligible = estimatedTotal > 0 && exposure + estimatedTotal <= creditLimit;
 
-  eligibility.textContent = `Credit limit: P${creditLimit.toFixed(2)} · Exposure: P${exposure.toFixed(2)} · Available: P${available.toFixed(2)} · ${
+  eligibility.textContent = `Credit limit: ₱${creditLimit.toFixed(2)} · Exposure: ₱${exposure.toFixed(2)} · Available: ₱${available.toFixed(2)} · ${
     estimatedTotal > 0
-      ? `${eligible ? "Eligible" : "Not eligible"} for this sale (estimated exposure: P${(exposure + estimatedTotal).toFixed(2)}).`
+      ? `${eligible ? "Eligible" : "Not eligible"} for this sale (estimated exposure: ₱${(exposure + estimatedTotal).toFixed(2)}).`
       : "Add products to check eligibility."
   }`;
   eligibility.className = `small mt-1 ${estimatedTotal > 0 ? (eligible ? "text-success fw-bold" : "text-danger fw-bold") : "text-muted"}`;
@@ -1012,11 +1191,15 @@ const switchPosView = (viewId) => {
   }
 
   if (viewId === "view-checkout") {
+    document.body.classList.add("pos-terminal-active");
     focusBarcodeInput();
-  } else if (viewId === "view-recent-sales") {
-    loadSales();
-  } else if (viewId === "view-receipts") {
-    loadReceiptsArchive();
+  } else {
+    document.body.classList.remove("pos-terminal-active");
+    if (viewId === "view-recent-sales") {
+      loadSales();
+    } else if (viewId === "view-receipts") {
+      loadReceiptsArchive();
+    }
   }
 };
 
@@ -1049,29 +1232,38 @@ const filterRecentSales = () => {
   renderSalesTable(filtered);
 };
 
+let salesSortDirection = "desc";
+
 const renderSalesTable = (records) => {
   const tableDiv = document.getElementById("sales-table");
   if (!tableDiv) return;
 
-  tableDiv.innerHTML = records.length
+  const sorted = [...records].sort((a, b) => {
+    const idA = Number(a.sale_id || 0);
+    const idB = Number(b.sale_id || 0);
+    return salesSortDirection === "desc" ? idB - idA : idA - idB;
+  });
+
+  tableDiv.innerHTML = sorted.length
     ? `
     <table class="table table-hover table-striped table-sm mb-0 align-middle">
       <thead class="table-light">
         <tr>
-          <th>RECEIPT #</th>
+          <th id="th-sales-id" style="cursor: pointer; user-select: none;" title="Click to sort by Receipt #">
+            RECEIPT # <span class="sort-icon">${salesSortDirection === "desc" ? "▼" : "▲"}</span>
+          </th>
           <th>DATE &amp; TIME</th>
           <th>TYPE</th>
           <th>CUSTOMER</th>
           <th>TERMINAL</th>
           <th>CASHIER</th>
           <th>PAYMENT TENDER</th>
-          <th class="text-end">SAVINGS</th>
           <th class="text-end">TOTAL</th>
           <th class="text-center">ACTION</th>
         </tr>
       </thead>
       <tbody>
-        ${records
+        ${sorted
           .map(
             (sale) => `
           <tr>
@@ -1082,8 +1274,7 @@ const renderSalesTable = (records) => {
             <td class="small">${escapeHtml(sale.terminal_name)}</td>
             <td class="small">${escapeHtml(sale.cashier)}</td>
             <td class="small">${escapeHtml(sale.payment_method || (sale.sale_type === "AR" ? "AR Credit" : "Cash"))}</td>
-            <td class="text-end font-monospace text-success">${Number(sale.promotion_discount || 0).toFixed(2)}</td>
-            <td class="text-end font-monospace fw-bold">P${Number(sale.total_amount || 0).toFixed(2)}</td>
+            <td class="text-end font-monospace fw-bold">₱${Number(sale.total_amount || 0).toFixed(2)}</td>
             <td class="text-center">
               <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" data-receipt="${sale.sale_id}">
                 Receipt
@@ -1095,6 +1286,11 @@ const renderSalesTable = (records) => {
       </tbody>
     </table>`
     : '<p class="text-muted p-4 mb-0 text-center">No completed sales recorded for this register.</p>';
+
+  document.getElementById("th-sales-id")?.addEventListener("click", () => {
+    salesSortDirection = salesSortDirection === "desc" ? "asc" : "desc";
+    renderSalesTable(records);
+  });
 
   tableDiv.querySelectorAll("[data-receipt]").forEach((btn) => {
     btn.addEventListener("click", () => showReceipt(btn.dataset.receipt));
@@ -1211,21 +1407,33 @@ const loadReceiptPreview = async (saleId) => {
             <tr>
               <td class="py-1">
                 ${escapeHtml(item.product_name)} x ${item.quantity}
-                ${item.promo_name ? `<br><span class="text-success small">${escapeHtml(item.promo_name)}: -P${Number(item.promo_discount || 0).toFixed(2)}</span>` : ""}
+                ${Number(item.promo_discount || 0) > 0 ? `<br><small class="text-success">${escapeHtml(item.promo_name || "Promo")}: -₱${Number(item.promo_discount).toFixed(2)}</small>` : ""}
               </td>
-              <td class="text-end py-1 align-top">P${Number(item.line_total).toFixed(2)}</td>
+              <td class="text-end py-1 align-top">₱${Number(item.line_total).toFixed(2)}</td>
             </tr>`
             )
             .join("")}
         </table>
         <hr class="my-2" />
+        ${(() => {
+          const promoSavings = data.items.reduce((sum, it) => sum + Number(it.promo_discount || 0), 0);
+          return promoSavings > 0 ? `
+          <div class="d-flex justify-content-between small font-monospace text-success">
+            <span>Promo Savings:</span>
+            <span>-₱${promoSavings.toFixed(2)}</span>
+          </div>` : "";
+        })()}
         <div class="d-flex justify-content-between small font-monospace">
-          <span>Promo Savings:</span>
-          <span class="text-success">-P${data.items.reduce((sum, item) => sum + Number(item.promo_discount || 0), 0).toFixed(2)}</span>
+          <span>VATable Sales:</span>
+          <span>₱${Number(sale.price || (Number(sale.total_amount) / 1.12)).toFixed(2)}</span>
+        </div>
+        <div class="d-flex justify-content-between small font-monospace">
+          <span>VAT Amount (12%):</span>
+          <span>₱${Number(sale.tax_total || (Number(sale.total_amount) - (Number(sale.total_amount) / 1.12))).toFixed(2)}</span>
         </div>
         <div class="d-flex justify-content-between fw-bold font-monospace fs-6 mt-1">
           <span>TOTAL DUE:</span>
-          <span>P${Number(sale.total_amount).toFixed(2)}</span>
+          <span>₱${Number(sale.total_amount).toFixed(2)}</span>
         </div>
         ${isAr ? `
           <div class="small mt-2 p-1 bg-light border text-center font-monospace">
@@ -1240,7 +1448,7 @@ const loadReceiptPreview = async (saleId) => {
     if (reprintBtn) reprintBtn.disabled = false;
   } catch (err) {
     console.error(err);
-    alert("Unable to load receipt preview.");
+    showError("Unable to load receipt preview.");
   }
 };
 
@@ -1306,21 +1514,33 @@ const showReceipt = async (saleId) => {
             <tr>
               <td>
                 ${escapeHtml(item.product_name)} x ${item.quantity}
-                ${item.promo_name ? `<br><small class="text-success">${escapeHtml(item.promo_name)}: -P${Number(item.promo_discount || 0).toFixed(2)}</small>` : ""}
+                ${Number(item.promo_discount || 0) > 0 ? `<br><small class="text-success">${escapeHtml(item.promo_name || "Promo")}: -₱${Number(item.promo_discount).toFixed(2)}</small>` : ""}
               </td>
-              <td class="text-end font-monospace">P${Number(item.line_total).toFixed(2)}</td>
+              <td class="text-end font-monospace">₱${Number(item.line_total).toFixed(2)}</td>
             </tr>`
             )
             .join("")}
         </table>
         <hr class="my-2" />
+        ${(() => {
+          const promoSavings = data.items.reduce((sum, it) => sum + Number(it.promo_discount || 0), 0);
+          return promoSavings > 0 ? `
+          <div class="d-flex justify-content-between small font-monospace text-success">
+            <span>Promo Savings:</span>
+            <span>-₱${promoSavings.toFixed(2)}</span>
+          </div>` : "";
+        })()}
         <div class="d-flex justify-content-between small font-monospace">
-          <span>Promo Savings:</span>
-          <span class="text-success">-P${data.items.reduce((sum, item) => sum + Number(item.promo_discount || 0), 0).toFixed(2)}</span>
+          <span>VATable Sales:</span>
+          <span>₱${Number(sale.price || (Number(sale.total_amount) / 1.12)).toFixed(2)}</span>
+        </div>
+        <div class="d-flex justify-content-between small font-monospace">
+          <span>VAT Amount (12%):</span>
+          <span>₱${Number(sale.tax_total || (Number(sale.total_amount) - (Number(sale.total_amount) / 1.12))).toFixed(2)}</span>
         </div>
         <div class="d-flex justify-content-between fw-bold fs-6 mt-1 font-monospace">
           <span>TOTAL:</span>
-          <span>P${Number(sale.total_amount).toFixed(2)}</span>
+          <span>₱${Number(sale.total_amount).toFixed(2)}</span>
         </div>
         ${isAr ? `
           <div class="small mt-2 p-1 bg-light border text-center font-monospace">
@@ -1360,6 +1580,289 @@ const showReceipt = async (saleId) => {
     };
   } catch (err) {
     console.error(err);
-    alert("Unable to fetch receipt.");
+    showError("Unable to fetch receipt.");
+  }
+};
+
+/* ==========================================================================
+   Hold & Resume Transaction Management (Task 9)
+   ========================================================================== */
+const updateHeldTransactionsBadge = async () => {
+  try {
+    const { data } = await axios.get(apiUrl, { params: { operation: "getHeldTransactions" } });
+    allHeldTransactions = Array.isArray(data) ? data : [];
+    const badge = document.getElementById("held-count-badge");
+    if (badge) {
+      if (allHeldTransactions.length > 0) {
+        badge.textContent = allHeldTransactions.length;
+        badge.classList.remove("d-none");
+      } else {
+        badge.classList.add("d-none");
+      }
+    }
+  } catch (err) {
+    console.error("Unable to load held transactions count", err);
+  }
+};
+
+const openHoldModal = () => {
+  if (!cart.length) {
+    showScanFeedback("Cart is empty. Nothing to hold.", true);
+    showError("Add at least one product before holding the transaction.");
+    return;
+  }
+
+  const modalEl = document.getElementById("hold-transaction-modal");
+  if (!modalEl) return;
+
+  const totalItems = cart.reduce((sum, item) => sum + Number(item.quantity || 1), 0);
+  const grandTotalStr = document.getElementById("pos-grand-total")?.textContent || "PHP 0.00";
+
+  const itemCountEl = document.getElementById("hold-item-count");
+  const totalAmountEl = document.getElementById("hold-total-amount");
+  if (itemCountEl) itemCountEl.textContent = `${totalItems} items (${cart.length} line items)`;
+  if (totalAmountEl) totalAmountEl.textContent = grandTotalStr;
+
+  const custSelect = document.getElementById("ar_customer_id");
+  const selectedCustomer = custSelect?.value ? arCustomers.find((c) => String(c.ar_customer_id) === custSelect.value) : null;
+  const labelInput = document.getElementById("hold-customer-label");
+  if (labelInput) {
+    labelInput.value = selectedCustomer ? selectedCustomer.customer_name : (activeHoldRef ? `Continuation of ${activeHoldRef}` : "");
+  }
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+  setTimeout(() => {
+    labelInput?.focus();
+    labelInput?.select();
+  }, 150);
+};
+
+const executeHold = async () => {
+  if (!cart.length) return;
+  const labelInput = document.getElementById("hold-customer-label");
+  const customerLabel = labelInput?.value.trim() || "";
+
+  const holdData = {
+    customerLabel,
+    saleType: document.getElementById("sale_type")?.value || "Cash",
+    paymentMethodId: document.getElementById("sale_payment_method_id")?.value || null,
+    customerId: document.getElementById("ar_customer_id")?.value || null,
+    sukiCardStatus: document.getElementById("suki_card_status")?.value || "None",
+    sukiCardId: document.getElementById("suki_card_id")?.value || null,
+    sukiPointsBalance: document.getElementById("suki_points_balance")?.value || null,
+    taxRate: document.getElementById("tax_rate")?.value || 0,
+    items: cart,
+  };
+
+  try {
+    const formData = new FormData();
+    formData.append("operation", "holdTransaction");
+    formData.append("json", JSON.stringify(holdData));
+
+    const { data } = await axios.post(apiUrl, formData);
+    if (data.returnValue === 1) {
+      bootstrap.Modal.getInstance(document.getElementById("hold-transaction-modal"))?.hide();
+
+      // If we were continuing a previously held transaction and held again, remove old held record
+      if (activeHeldId && activeHeldId !== data.heldId) {
+        const delForm = new FormData();
+        delForm.append("operation", "deleteHeldTransaction");
+        delForm.append("heldId", activeHeldId);
+        await axios.post(apiUrl, delForm);
+      }
+
+      activeHeldId = null;
+      activeHoldRef = null;
+      document.getElementById("held-sale-status-badge")?.classList.add("d-none");
+      closeSale();
+      await updateHeldTransactionsBadge();
+      showScanFeedback(`Transaction put on hold (${data.holdReference}). Terminal cleared.`);
+    } else {
+      showError(data.message || "Unable to hold transaction.");
+    }
+  } catch (err) {
+    console.error(err);
+    showError(err.response?.data?.message || "Failed to hold transaction.");
+  }
+};
+
+const openResumeModal = async () => {
+  const modalEl = document.getElementById("resume-transaction-modal");
+  if (!modalEl) return;
+
+  const listTbody = document.getElementById("held-transactions-list");
+  if (listTbody) {
+    listTbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Loading held transactions...</td></tr>';
+  }
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+
+  try {
+    const { data } = await axios.get(apiUrl, { params: { operation: "getHeldTransactions" } });
+    allHeldTransactions = Array.isArray(data) ? data : [];
+    renderHeldTransactionsList(allHeldTransactions);
+    updateHeldTransactionsBadge();
+  } catch (err) {
+    console.error(err);
+    if (listTbody) {
+      listTbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3">Failed to load held transactions.</td></tr>';
+    }
+  }
+};
+
+const renderHeldTransactionsList = (records) => {
+  const listTbody = document.getElementById("held-transactions-list");
+  if (!listTbody) return;
+
+  if (!records.length) {
+    listTbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No held transactions waiting.</td></tr>';
+    return;
+  }
+
+  listTbody.innerHTML = records
+    .map((h) => {
+      const isResumed = activeHeldId && Number(activeHeldId) === Number(h.held_id);
+      return `
+        <tr class="${isResumed ? "table-warning" : ""}">
+          <td class="font-monospace fw-bold">${escapeHtml(h.hold_reference)}</td>
+          <td class="fw-semibold">${escapeHtml(h.customer_label || "No note")}</td>
+          <td class="small text-muted font-monospace">${escapeHtml(h.created_at)}</td>
+          <td class="text-center fw-bold">${h.item_count}</td>
+          <td class="text-end font-monospace fw-bold">P${Number(h.total_amount).toFixed(2)}</td>
+          <td class="text-center text-nowrap">
+            <button type="button" class="btn btn-sm ${isResumed ? "btn-secondary" : "btn-primary"} py-0 px-2 resume-action-btn" data-held-id="${h.held_id}" ${isResumed ? "disabled" : ""}>
+              ${isResumed ? "Resumed" : "Resume"}
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 ms-1 discard-action-btn" data-held-id="${h.held_id}" title="Discard held transaction">
+              &times;
+            </button>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  listTbody.querySelectorAll(".resume-action-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const heldId = Number(btn.dataset.heldId);
+      resumeHeldTransaction(heldId);
+    });
+  });
+
+  listTbody.querySelectorAll(".discard-action-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const heldId = Number(btn.dataset.heldId);
+      discardHeldTransaction(heldId);
+    });
+  });
+};
+
+const resumeHeldTransaction = async (heldId) => {
+  const held = allHeldTransactions.find((h) => Number(h.held_id) === Number(heldId));
+  if (!held) {
+    showError("Held transaction not found.");
+    return;
+  }
+
+  if (cart.length > 0 && activeHeldId !== heldId) {
+    const res = await showConfirm({
+      title: "Replace Active Register Cart?",
+      text: "Your current active cart will be replaced with this held transaction. Continue?",
+      confirmButtonText: "Yes, Replace Cart",
+      isDestructive: false
+    });
+    if (!res.isConfirmed) {
+      return;
+    }
+  }
+
+  // Restore cart items
+  cart = (held.items || []).map((item) => {
+    const prod = products.find((p) => Number(p.product_id) === Number(item.productId));
+    return {
+      productId: Number(item.productId),
+      productName: item.productName || prod?.product_name || "Product",
+      unitPrice: Number(item.unitPrice || prod?.price || 0),
+      quantity: Number(item.quantity || 1),
+      promoId: item.promoId !== undefined && item.promoId !== null ? item.promoId : (prod?.promo_id ? Number(prod.promo_id) : null),
+      promoName: item.promoName !== undefined ? item.promoName : (prod?.promo_name || ""),
+      promoRate: item.promoRate !== undefined ? Number(item.promoRate) : Number(prod?.promo_rate || 0),
+    };
+  });
+  activeCartIndex = cart.length - 1;
+
+  // Track active held transaction so completion finalizes this exact held transaction
+  activeHeldId = held.held_id;
+  activeHoldRef = held.hold_reference;
+
+  // Restore cart state fields
+  const state = held.cart_state || {};
+  if (state.saleType) {
+    setSaleMode(state.saleType);
+  }
+  if (state.paymentMethodId && document.getElementById("sale_payment_method_id")) {
+    document.getElementById("sale_payment_method_id").value = state.paymentMethodId;
+  }
+  if (state.customerId && document.getElementById("ar_customer_id")) {
+    document.getElementById("ar_customer_id").value = state.customerId;
+  }
+  if (state.sukiCardStatus && document.getElementById("suki_card_status")) {
+    document.getElementById("suki_card_status").value = state.sukiCardStatus;
+  }
+  if (state.sukiCardId && document.getElementById("suki_card_id")) {
+    document.getElementById("suki_card_id").value = state.sukiCardId;
+  }
+  if (state.sukiPointsBalance !== undefined && document.getElementById("suki_points_balance")) {
+    document.getElementById("suki_points_balance").value = state.sukiPointsBalance;
+  }
+  if (state.taxRate !== undefined && document.getElementById("tax_rate")) {
+    document.getElementById("tax_rate").value = state.taxRate;
+  }
+
+  updateSaleTypeFields();
+  updateSukiFields();
+  renderCart();
+
+  // Show status banner badge
+  const statusBadge = document.getElementById("held-sale-status-badge");
+  if (statusBadge) {
+    statusBadge.textContent = `RESUMED: ${held.hold_reference}${held.customer_label ? ` (${held.customer_label})` : ""}`;
+    statusBadge.classList.remove("d-none");
+  }
+
+  bootstrap.Modal.getInstance(document.getElementById("resume-transaction-modal"))?.hide();
+  showScanFeedback(`Resumed held sale ${held.hold_reference}. Add missing items or checkout.`);
+  focusBarcodeInput();
+};
+
+const discardHeldTransaction = async (heldId) => {
+  const res = await showConfirm({
+    title: "Discard Held Transaction?",
+    text: "Are you sure you want to permanently discard this held transaction?",
+    confirmButtonText: "Yes, Discard",
+    isDestructive: true
+  });
+  if (!res.isConfirmed) return;
+  try {
+    const formData = new FormData();
+    formData.append("operation", "deleteHeldTransaction");
+    formData.append("heldId", heldId);
+    const { data } = await axios.post(apiUrl, formData);
+    if (data.returnValue === 1) {
+      if (activeHeldId === heldId) {
+        activeHeldId = null;
+        activeHoldRef = null;
+        document.getElementById("held-sale-status-badge")?.classList.add("d-none");
+      }
+      allHeldTransactions = allHeldTransactions.filter((h) => Number(h.held_id) !== Number(heldId));
+      renderHeldTransactionsList(allHeldTransactions);
+      updateHeldTransactionsBadge();
+      showScanFeedback("Held transaction discarded.");
+    }
+  } catch (err) {
+    console.error(err);
+    showError("Unable to discard held transaction.");
   }
 };

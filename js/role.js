@@ -1,5 +1,6 @@
 import { updateModal } from "./modules/role-update.js";
 import { deleteModal } from "./modules/role-delete.js";
+import { showToast, showError } from "./swal-helper.js";
 
 const baseApiUrl = new URL("../api", import.meta.url).href;
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
@@ -28,7 +29,7 @@ const displayRecords = async () => {
   if (response.status == 200) {
     displayRecordsTable(response.data);
   } else {
-    alert("Error!");
+    showError("Unable to load roles.");
   }
 };
 
@@ -90,8 +91,8 @@ const insertRole = async () => {
     displayRecords();
     document.getElementById("add-form").reset();
     bootstrap.Modal.getOrCreateInstance(document.getElementById("blank-modal")).hide();
-    alert("Role successfully saved!");
+    showToast("Role successfully saved!", "success");
   } else {
-    alert("ERROR");
+    showError("Failed to save role.");
   }
 };

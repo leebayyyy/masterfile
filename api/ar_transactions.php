@@ -23,19 +23,19 @@ if ($operation === 'getData') {
             CASE
               WHEN COALESCE(i.balance, 0) <= 0 THEN 'Paid'
               WHEN i.due_date IS NULL THEN 'No due date'
-              WHEN i.due_date < CURDATE() THEN 'Overdue'
-              WHEN i.due_date = CURDATE() THEN 'Due today'
+              WHEN i.due_date < CURRENT_DATE THEN 'Overdue'
+              WHEN i.due_date = CURRENT_DATE THEN 'Due today'
               ELSE 'Current'
             END AS collection_status,
             CASE
-              WHEN COALESCE(i.balance, 0) > 0 AND i.due_date < CURDATE()
-              THEN DATEDIFF(CURDATE(), i.due_date)
+              WHEN COALESCE(i.balance, 0) > 0 AND i.due_date < CURRENT_DATE
+              THEN (CURRENT_DATE - i.due_date)
               ELSE 0
             END AS days_overdue
      FROM tblar_invoice i
      INNER JOIN tblar_customers c ON c.ar_customer_id=i.ar_customer_id
      WHERE i.status <> 'Pending'
-     ORDER BY (COALESCE(i.balance, 0) > 0 AND i.due_date < CURDATE()) DESC,
+     ORDER BY (CASE WHEN COALESCE(i.balance, 0) > 0 AND i.due_date < CURRENT_DATE THEN 1 ELSE 0 END) DESC,
               i.due_date ASC, i.ar_invoice_id DESC"
   )->fetchAll(PDO::FETCH_ASSOC);
   $memos = $conn->query(
@@ -56,41 +56,86 @@ if ($operation === 'getData') {
      INNER JOIN tblusers u ON u.user_id=m.issued_by_user_id
      ORDER BY issue_date DESC, memo_id DESC"
   )->fetchAll(PDO::FETCH_ASSOC);
-  $unbilledSales = $conn->query(
-    "SELECT s.sale_id, NULL AS pending_invoice_id, s.sale_date, s.total_amount AS invoice_amount,
-            c.customer_name, COALESCE(ct.days, 0) AS payment_terms_days
+  // Auto-approve any unbilled AR sales and pending invoices on creation/loading
+  $unbilled = $conn->query(
+    "SELECT s.sale_id, s.sale_date, s.total_amount, s.ar_customer_id, s.cashier_user_id, COALESCE(ct.days, 30) AS days
      FROM tblsales s
      INNER JOIN tblar_customers c ON c.ar_customer_id=s.ar_customer_id
-     INNER JOIN tblar_customer_types ct ON ct.customer_type_id=c.customer_type_id
-     WHERE s.sale_type='AR' AND NOT EXISTS (
-       SELECT 1 FROM tblar_invoice i WHERE i.sale_id=s.sale_id
-     )
-     ORDER BY s.sale_id DESC"
+     LEFT JOIN tblar_customer_types ct ON ct.customer_type_id=c.customer_type_id
+     WHERE s.sale_type='AR' AND NOT EXISTS (SELECT 1 FROM tblar_invoice i WHERE i.sale_id=s.sale_id)"
   )->fetchAll(PDO::FETCH_ASSOC);
-  $legacyPendingSales = $conn->query(
-    "SELECT s.sale_id, i.ar_invoice_id AS pending_invoice_id, s.sale_date,
-            i.invoice_amount, c.customer_name, COALESCE(ct.days, 0) AS payment_terms_days
+  foreach ($unbilled as $ub) {
+    $invNumber = "INV-" . str_pad((string)$ub['sale_id'], 8, "0", STR_PAD_LEFT);
+    $ins = $conn->prepare(
+      "INSERT INTO tblar_invoice (invoice_number, ar_customer_id, sale_id, created_by_user_id, invoice_date, due_date, invoice_amount, balance, status)
+       VALUES (:number, :customerId, :saleId, :userId, :saleDate, (CAST(:saleDate2 AS date) + (CAST(:days AS integer) * INTERVAL '1 day'))::date, :amount, :balance, 'Approved')"
+    );
+    $ins->execute([
+      ":number" => $invNumber,
+      ":customerId" => $ub['ar_customer_id'],
+      ":saleId" => $ub['sale_id'],
+      ":userId" => $ub['cashier_user_id'],
+      ":saleDate" => $ub['sale_date'],
+      ":saleDate2" => $ub['sale_date'],
+      ":days" => (int)$ub['days'],
+      ":amount" => $ub['total_amount'],
+      ":balance" => $ub['total_amount']
+    ]);
+  }
+  $conn->query("UPDATE tblar_invoice SET status='Approved' WHERE status='Pending'");
+
+  $invoices = $conn->query(
+    "SELECT i.ar_invoice_id, i.invoice_number, i.invoice_date, i.due_date,
+            i.invoice_amount, i.balance, i.status, c.customer_name,
+            CASE
+              WHEN COALESCE(i.balance, 0) <= 0 THEN 'Paid'
+              WHEN i.due_date IS NULL THEN 'No due date'
+              WHEN i.due_date < CURRENT_DATE THEN 'Overdue'
+              WHEN i.due_date = CURRENT_DATE THEN 'Due today'
+              ELSE 'Current'
+            END AS collection_status,
+            CASE
+              WHEN COALESCE(i.balance, 0) > 0 AND i.due_date < CURRENT_DATE
+              THEN (CURRENT_DATE - i.due_date)
+              ELSE 0
+            END AS days_overdue
      FROM tblar_invoice i
-     INNER JOIN tblsales s ON s.sale_id=i.sale_id
      INNER JOIN tblar_customers c ON c.ar_customer_id=i.ar_customer_id
-     INNER JOIN tblar_customer_types ct ON ct.customer_type_id=c.customer_type_id
-     WHERE i.status='Pending'
-     ORDER BY s.sale_id DESC"
+     ORDER BY (CASE WHEN COALESCE(i.balance, 0) > 0 AND i.due_date < CURRENT_DATE THEN 1 ELSE 0 END) DESC,
+              i.due_date ASC, i.ar_invoice_id DESC"
+  )->fetchAll(PDO::FETCH_ASSOC);
+  $memos = $conn->query(
+    "SELECT 'Credit' AS memo_type, m.credit_memo_id AS memo_id, m.ar_invoice_id,
+            i.invoice_number, c.customer_name, m.issue_date, m.amount, m.status,
+            CONCAT(u.first_name, ' ', u.last_name) AS issued_by
+     FROM tblar_credit_memo m
+     INNER JOIN tblar_invoice i ON i.ar_invoice_id=m.ar_invoice_id
+     INNER JOIN tblar_customers c ON c.ar_customer_id=i.ar_customer_id
+     INNER JOIN tblusers u ON u.user_id=m.issued_by_user_id
+     UNION ALL
+     SELECT 'Debit', m.debit_memo_id, m.ar_invoice_id,
+            i.invoice_number, c.customer_name, m.issue_date, m.amount, m.status,
+            CONCAT(u.first_name, ' ', u.last_name)
+     FROM tblar_debit_memo m
+     INNER JOIN tblar_invoice i ON i.ar_invoice_id=m.ar_invoice_id
+     INNER JOIN tblar_customers c ON c.ar_customer_id=i.ar_customer_id
+     INNER JOIN tblusers u ON u.user_id=m.issued_by_user_id
+     ORDER BY issue_date DESC, memo_id DESC"
   )->fetchAll(PDO::FETCH_ASSOC);
   echo json_encode([
     "invoices" => $invoices,
     "memos" => $memos,
     "customers" => $conn->query("SELECT ar_customer_id, customer_name FROM tblar_customers WHERE is_active=1 ORDER BY customer_name")->fetchAll(PDO::FETCH_ASSOC),
-    "sales" => array_merge($unbilledSales, $legacyPendingSales),
-    "canManageAr" => $user['role_name'] === 'Accounts Receivable Staff'
+    "sales" => [],
+    "canManageAr" => in_array($user['role_name'], ['Admin', 'Accounts Receivable Staff'], true)
   ]);
   exit;
 }
 
 if ($operation === 'createInvoice') {
-  if ($user['role_name'] !== 'Accounts Receivable Staff') {
+  if (!in_array($user['role_name'], ['Admin', 'Accounts Receivable Staff'], true)) {
     http_response_code(403);
-    echo json_encode(["message"=>"Only AR Staff can create invoices."]);
+    echo json_encode(["message"=>"Only Admin and AR Staff can create invoices."]);
     exit;
   }
   $saleId = (int)($data['saleId'] ?? 0);
@@ -141,13 +186,10 @@ if ($operation === 'createInvoice') {
     $existingInvoice = $legacyStmt->fetch(PDO::FETCH_ASSOC);
     $invoiceNumber = "INV-" . str_pad((string)$saleId, 8, "0", STR_PAD_LEFT);
     if ($existingInvoice) {
-      if ($existingInvoice['status'] !== 'Pending') {
-        throw new RuntimeException("An invoice has already been created for this sale.");
-      }
       $update = $conn->prepare(
         "UPDATE tblar_invoice
          SET invoice_number=:number, created_by_user_id=:userId, invoice_date=:invoiceDate,
-             due_date=:dueDate, invoice_amount=:amount, balance=:balance, status='Open'
+             due_date=:dueDate, invoice_amount=:amount, balance=:balance, status='Approved'
          WHERE ar_invoice_id=:invoiceId"
       );
       $update->execute([
@@ -163,7 +205,7 @@ if ($operation === 'createInvoice') {
       $insert = $conn->prepare(
         "INSERT INTO tblar_invoice
           (invoice_number, ar_customer_id, sale_id, created_by_user_id, invoice_date, due_date, invoice_amount, balance, status)
-         VALUES (:number, :customerId, :saleId, :userId, :invoiceDate, :dueDate, :amount, :balance, 'Open')"
+         VALUES (:number, :customerId, :saleId, :userId, :invoiceDate, :dueDate, :amount, :balance, 'Approved')"
       );
       $insert->execute([
         ":number"=>$invoiceNumber,
@@ -190,9 +232,9 @@ if ($operation === 'createInvoice') {
 }
 
 if ($operation === 'createMemo') {
-  if ($user['role_name'] !== 'Accounts Receivable Staff') {
+  if (!in_array($user['role_name'], ['Admin', 'Accounts Receivable Staff'], true)) {
     http_response_code(403);
-    echo json_encode(["message"=>"Only AR Staff can create memos."]);
+    echo json_encode(["message"=>"Only Admin and AR Staff can create memos."]);
     exit;
   }
   $type = $data['memoType'] ?? '';
@@ -224,7 +266,7 @@ if ($operation === 'createMemo') {
     }
     $table = $type === 'Credit' ? 'tblar_credit_memo' : 'tblar_debit_memo';
     $columns = $type === 'Credit' ? "(ar_invoice_id, issue_date, amount, invoice_balance, issued_by_user_id, status)" : "(ar_invoice_id, issue_date, amount, issued_by_user_id, status)";
-    $values = $type === 'Credit' ? "(:invoiceId, CURDATE(), :amount, :balance, :userId, 'Approved')" : "(:invoiceId, CURDATE(), :amount, :userId, 'Approved')";
+    $values = $type === 'Credit' ? "(:invoiceId, CURRENT_DATE, :amount, :balance, :userId, 'Approved')" : "(:invoiceId, CURRENT_DATE, :amount, :userId, 'Approved')";
     $stmt = $conn->prepare("INSERT INTO {$table} {$columns} VALUES {$values}");
     $balanceCents = (int)round((float)$invoice['balance'] * 100);
     $invoiceAmountCents = (int)round((float)$invoice['invoice_amount'] * 100);

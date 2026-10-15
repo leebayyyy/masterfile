@@ -1,32 +1,27 @@
+import { showConfirm, showToast, showError } from "../swal-helper.js";
+
 export const deactivateModal = async (arCustomerId, refreshDisplay) => {
-  document.getElementById("blank-modal-title").innerText = "Confirm Deactivate";
-  document.getElementById("blank-main-div").innerHTML = `<p>Deactivate this AR customer? It can be restored later.</p>`;
-
-  const modalFooter = document.getElementById("blank-modal-footer");
-  modalFooter.innerHTML = `
-      <button type="button" class="btn btn-danger btn-sm w-100 me-2 btn-confirm">Deactivate</button>
-      <button type="button" class="btn btn-secondary btn-sm w-100" data-bs-dismiss="modal">Close</button>
-    `;
-
-  const myModal = new bootstrap.Modal(document.getElementById("blank-modal"), {
-    keyboard: true,
-    backdrop: "static",
+  const result = await showConfirm({
+    title: "Deactivate AR Customer?",
+    text: "Are you sure you want to deactivate this customer? It can be restored later.",
+    confirmButtonText: "Yes, Deactivate",
+    isDestructive: true
   });
+  if (!result.isConfirmed) return;
 
-  modalFooter.querySelector(".btn-confirm").addEventListener("click", async () => {
-    const result = await deactivateArCustomer(arCustomerId);
-    if (result == 1) {
+  try {
+    const res = await deactivateArCustomer(arCustomerId);
+    if (res == 1) {
       refreshDisplay();
-      alert("AR Customer has been deactivated.");
-      myModal.hide();
-    } else if (result && result.message) {
-      alert(result.message);
+      showToast("AR Customer has been deactivated.");
+    } else if (res && res.message) {
+      showError(res.message);
     } else {
-      alert("ERROR");
+      showError("Could not deactivate customer.");
     }
-  });
-
-  myModal.show();
+  } catch (err) {
+    showError(err.response?.data?.message || "Failed to deactivate customer.");
+  }
 };
 
 const deactivateArCustomer = async (arCustomerId) => {

@@ -1,18 +1,21 @@
 import { updateModal } from "./modules/product-update.js";
 import { deactivateModal } from "./modules/product-delete.js";
+import { showToast, showError, showSuccess } from "./swal-helper.js";
 
 const baseApiUrl = new URL("../api", import.meta.url).href;
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 let productCategoryList = [];
 let unitOfMeasureList = [];
-document.addEventListener("DOMContentLoaded", () => {
+let promotionList = [];
+document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("btn-add").addEventListener("click", () => {
     renderAddModal();
   });
-  loadProductCategory();
-  loadUnitOfMeasure();
-  displayRecords();
+  await loadProductCategory();
+  await loadUnitOfMeasure();
+  await loadPromotions();
+  await displayRecords();
   document.getElementById("add-product-form").addEventListener("submit", (event) => {
     event.preventDefault();
     insertProduct();
@@ -38,8 +41,16 @@ const renderAddModal = () => {
         <option value="">-- SELECT UNIT OF MEASURE --</option>
       </select>
     </div>
-    <div class="col-md-6"><input type="text" class="form-control" id="price_tier" placeholder="Price Tier" /></div>
+    <div class="col-md-6">
+      <div class="form-control bg-light text-muted fw-bold" style="cursor: not-allowed;" title="Static price tier">Retail</div>
+      <input type="hidden" id="price_tier" value="Retail" />
+    </div>
     <div class="col-md-6"><input type="number" step="0.01" min="0" class="form-control" id="wholesale_price" placeholder="Wholesale Price" /></div>
+    <div class="col-md-12">
+      <select class="form-select" id="promo_id">
+        <option value="">-- NO PROMOTION --</option>
+      </select>
+    </div>
   `;
   document.getElementById("blank-modal-footer").innerHTML = `
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -47,6 +58,7 @@ const renderAddModal = () => {
   `;
 
   const select = document.getElementById("category_id");
+  select.innerHTML = '<option value="">-- SELECT CATEGORY --</option>';
   productCategoryList.forEach((productCategory) => {
     const option = document.createElement("option");
     option.innerText = productCategory.category_name;
@@ -55,54 +67,108 @@ const renderAddModal = () => {
   });
 
   const unitSelect = document.getElementById("unit_of_measure_id");
+  unitSelect.innerHTML = '<option value="">-- SELECT UNIT OF MEASURE --</option>';
   unitOfMeasureList.forEach((unit) => {
     const option = document.createElement("option");
     option.textContent = unit.measure_name;
     option.value = unit.unit_of_measure_id;
     unitSelect.appendChild(option);
   });
+
+  const promoSelect = document.getElementById("promo_id");
+  if (promoSelect) {
+    promoSelect.innerHTML = '<option value="">-- NO PROMOTION --</option>';
+    promotionList.forEach((promo) => {
+      const option = document.createElement("option");
+      option.innerText = `${promo.promo_name} (${Number(promo.discount_rate).toFixed(0)}% off)`;
+      option.value = promo.promo_id;
+      promoSelect.appendChild(option);
+    });
+  }
 };
 
 const loadProductCategory = async () => {
   const response = await axios.get(`${baseApiUrl}/product_category.php`, {
     params: { operation: "getAllProductCategories" },
+    withCredentials: true,
   });
   if (response.status == 200) {
     productCategoryList = response.data;
     const select = document.getElementById("category_id");
-    select.innerHTML = '<option value="">-- SELECT CATEGORY --</option>';
-    productCategoryList.forEach((productCategory) => {
-      let option = document.createElement("option");
-      option.innerText = productCategory.category_name;
-      option.value = productCategory.category_id;
-      select.appendChild(option);
-    });
+    if (select) {
+      select.innerHTML = '<option value="">-- SELECT CATEGORY --</option>';
+      productCategoryList.forEach((productCategory) => {
+        let option = document.createElement("option");
+        option.innerText = productCategory.category_name;
+        option.value = productCategory.category_id;
+        select.appendChild(option);
+      });
+    }
   } else {
-    alert("Error!");
+    showError("Error loading product categories!");
   }
 };
 
 const loadUnitOfMeasure = async () => {
   const response = await axios.get(`${baseApiUrl}/product.php`, {
     params: { operation: "getAllUnitsOfMeasure" },
+    withCredentials: true,
   });
   if (response.status == 200) {
     unitOfMeasureList = response.data;
+    const unitSelect = document.getElementById("unit_of_measure_id");
+    if (unitSelect) {
+      unitSelect.innerHTML = '<option value="">-- SELECT UNIT OF MEASURE --</option>';
+      unitOfMeasureList.forEach((unit) => {
+        const option = document.createElement("option");
+        option.textContent = unit.measure_name;
+        option.value = unit.unit_of_measure_id;
+        unitSelect.appendChild(option);
+      });
+    }
   } else {
-    alert("Error loading units of measure!");
+    showError("Error loading units of measure!");
+  }
+};
+
+const loadPromotions = async () => {
+  try {
+    const response = await axios.get(`${baseApiUrl}/product.php`, {
+      params: { operation: "getAllPromotions" },
+      withCredentials: true,
+    });
+    if (response.status == 200 && Array.isArray(response.data)) {
+      promotionList = response.data;
+      const select = document.getElementById("promo_id");
+      if (select) {
+        select.innerHTML = '<option value="">-- NO PROMOTION --</option>';
+        promotionList.forEach((promo) => {
+          let option = document.createElement("option");
+          option.innerText = `${promo.promo_name} (${Number(promo.discount_rate).toFixed(0)}% off)`;
+          option.value = promo.promo_id;
+          select.appendChild(option);
+        });
+      }
+    }
+  } catch (err) {
+    console.error("Error loading promotions", err);
   }
 };
 
 const displayRecords = async () => {
   const response = await axios.get(`${baseApiUrl}/product.php`, {
     params: { operation: "getAllProducts" },
+    withCredentials: true,
   });
   if (response.status == 200) {
     displayRecordsTable(response.data);
   } else {
-    alert("Error!");
+    showError("Error loading products!");
   }
 };
+
+let productSortColumn = "product_id";
+let productSortDirection = "desc";
 
 const displayRecordsTable = (records) => {
   const tableDiv = document.getElementById("table-div");
@@ -110,13 +176,44 @@ const displayRecordsTable = (records) => {
   const table = document.createElement("table");
   table.classList.add("table", "table-hover", "table-striped", "table-sm");
 
+  const sorted = [...records].sort((a, b) => {
+    let comparison = 0;
+    if (productSortColumn === "product_id") {
+      comparison = Number(a.product_id || 0) - Number(b.product_id || 0);
+    } else if (productSortColumn === "product_name") {
+      comparison = (a.product_name || "").localeCompare(b.product_name || "");
+    } else if (productSortColumn === "price") {
+      comparison = Number(a.price || 0) - Number(b.price || 0);
+    } else if (productSortColumn === "category_name") {
+      comparison = (a.category_name || "").localeCompare(b.category_name || "");
+    } else if (productSortColumn === "unit_of_measure") {
+      const uA = a.measure_name || unitOfMeasureList.find((unit) => Number(unit.unit_of_measure_id) === Number(a.unit_of_measure_id))?.measure_name || "";
+      const uB = b.measure_name || unitOfMeasureList.find((unit) => Number(unit.unit_of_measure_id) === Number(b.unit_of_measure_id))?.measure_name || "";
+      comparison = uA.localeCompare(uB);
+    }
+    return productSortDirection === "desc" ? -comparison : comparison;
+  });
+
+  const getSortIcon = (col) => (productSortColumn === col ? (productSortDirection === "desc" ? "▼" : "▲") : "");
+
   const thead = document.createElement("thead");
   thead.innerHTML = `
       <tr>
-        <th>PRODUCT NAME</th>
-        <th>PRICE</th>
-        <th>CATEGORY</th>
-        <th>UNIT OF MEASURE</th>
+        <th id="th-product-id" class="text-nowrap" style="cursor: pointer; user-select: none;" title="Click to sort by Product ID">
+          PRODUCT ID <span class="sort-icon text-primary">${getSortIcon("product_id")}</span>
+        </th>
+        <th id="th-product-name" class="text-nowrap" style="cursor: pointer; user-select: none;" title="Click to sort by Product Name">
+          PRODUCT NAME <span class="sort-icon text-primary">${getSortIcon("product_name")}</span>
+        </th>
+        <th id="th-product-price" class="text-nowrap" style="cursor: pointer; user-select: none;" title="Click to sort by Price">
+          PRICE <span class="sort-icon text-primary">${getSortIcon("price")}</span>
+        </th>
+        <th id="th-product-category" class="text-nowrap" style="cursor: pointer; user-select: none;" title="Click to sort by Category">
+          CATEGORY <span class="sort-icon text-primary">${getSortIcon("category_name")}</span>
+        </th>
+        <th id="th-product-unit" class="text-nowrap" style="cursor: pointer; user-select: none;" title="Click to sort by Unit of Measure">
+          UNIT OF MEASURE <span class="sort-icon text-primary">${getSortIcon("unit_of_measure")}</span>
+        </th>
         <th>PRICE TIER</th>
         <th>WHOLESALE PRICE</th>
         <th>STATUS</th>
@@ -126,15 +223,17 @@ const displayRecordsTable = (records) => {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  records.forEach((product) => {
+  sorted.forEach((product) => {
+    const measureName = product.measure_name || unitOfMeasureList.find((unit) => Number(unit.unit_of_measure_id) === Number(product.unit_of_measure_id))?.measure_name || "";
     let row = document.createElement("tr");
     row.innerHTML = `
+        <td class="font-monospace fw-bold">#${product.product_id}</td>
         <td>${product.product_name}</td>
-        <td>${product.price}</td>
-        <td>${product.category_name}</td>
-        <td>${unitOfMeasureList.find((unit) => Number(unit.unit_of_measure_id) === Number(product.unit_of_measure_id))?.measure_name ?? ""}</td>
+        <td>₱${Number(product.price || 0).toFixed(2)}</td>
+        <td>${product.category_name || ""}</td>
+        <td>${measureName}</td>
         <td>${product.price_tier ?? ""}</td>
-        <td>${product.wholesale_price ?? ""}</td>
+        <td>${product.wholesale_price ? `₱${Number(product.wholesale_price).toFixed(2)}` : ""}</td>
         <td>${product.is_active == 1 ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
         <td>
           <button type='button' class='btn btn-success btn-sm btn-update'>Update</button>
@@ -146,7 +245,7 @@ const displayRecordsTable = (records) => {
     tbody.appendChild(row);
 
     row.querySelector(".btn-update").addEventListener("click", () => {
-      updateModal(product.product_id, productCategoryList, unitOfMeasureList, displayRecords);
+      updateModal(product.product_id, productCategoryList, unitOfMeasureList, displayRecords, promotionList);
     });
 
     if (product.is_active == 1) {
@@ -161,32 +260,54 @@ const displayRecordsTable = (records) => {
   });
   table.appendChild(tbody);
   tableDiv.appendChild(table);
+
+  const handleSortClick = (col) => {
+    if (productSortColumn === col) {
+      productSortDirection = productSortDirection === "desc" ? "asc" : "desc";
+    } else {
+      productSortColumn = col;
+      productSortDirection = col === "product_id" ? "desc" : "asc";
+    }
+    displayRecordsTable(records);
+  };
+
+  document.getElementById("th-product-id")?.addEventListener("click", () => handleSortClick("product_id"));
+  document.getElementById("th-product-name")?.addEventListener("click", () => handleSortClick("product_name"));
+  document.getElementById("th-product-price")?.addEventListener("click", () => handleSortClick("price"));
+  document.getElementById("th-product-category")?.addEventListener("click", () => handleSortClick("category_name"));
+  document.getElementById("th-product-unit")?.addEventListener("click", () => handleSortClick("unit_of_measure"));
 };
 
 const insertProduct = async () => {
   const jsonData = {
-    productName: document.getElementById("product_name").value,
-    price: document.getElementById("price").value,
-    categoryId: document.getElementById("category_id").value,
-    unitOfMeasureId: document.getElementById("unit_of_measure_id").value,
-    priceTier: document.getElementById("price_tier").value,
-    wholesalePrice: document.getElementById("wholesale_price").value,
+    productName: document.getElementById("product_name")?.value || "",
+    price: document.getElementById("price")?.value || "",
+    categoryId: document.getElementById("category_id")?.value || "",
+    unitOfMeasureId: document.getElementById("unit_of_measure_id")?.value || "",
+    priceTier: document.getElementById("price_tier")?.value?.trim() || "Retail",
+    wholesalePrice: document.getElementById("wholesale_price")?.value || "",
+    promoId: document.getElementById("promo_id")?.value || null,
   };
   const formData = new FormData();
   formData.append("operation", "insertProduct");
   formData.append("json", JSON.stringify(jsonData));
-  const response = await axios({
-    url: `${baseApiUrl}/product.php`,
-    method: "POST",
-    data: formData,
-  });
-  if (response.data == 1) {
-    displayRecords();
-    document.getElementById("add-product-form").reset();
-    bootstrap.Modal.getOrCreateInstance(document.getElementById("blank-modal")).hide();
-    alert("Product successfully saved!");
-  } else {
-    alert("ERROR");
+  try {
+    const response = await axios({
+      url: `${baseApiUrl}/product.php`,
+      method: "POST",
+      data: formData,
+      withCredentials: true,
+    });
+    if (response.data == 1) {
+      await displayRecords();
+      document.getElementById("add-product-form")?.reset();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById("blank-modal")).hide();
+      showToast("Product successfully saved!");
+    } else {
+      showError("ERROR: " + (response.data?.message || "Could not save product."));
+    }
+  } catch (err) {
+    showError("Save error: " + (err.response?.data?.message || err.message));
   }
 };
 
@@ -198,10 +319,12 @@ const restoreRecord = async (productId) => {
     url: `${baseApiUrl}/product.php`,
     method: "POST",
     data: formData,
+    withCredentials: true,
   });
   if (response.data == 1) {
     displayRecords();
+    showToast("Product restored successfully.");
   } else {
-    alert("ERROR");
+    showError("Could not restore product.");
   }
 };

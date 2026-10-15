@@ -34,7 +34,13 @@ function requireRoles($roles) {
   }
   $_SESSION['user'] = $currentUser;
   $user = $currentUser;
-  if (!in_array($user['role_name'], $roles, true)) {
+  header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+  header("Pragma: no-cache");
+  header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
+
+  $userRole = strtolower(trim($user['role_name']));
+  $allowedRoles = array_map(function($r) { return strtolower(trim($r)); }, (array)$roles);
+  if (!in_array($userRole, $allowedRoles, true)) {
     http_response_code(403);
     echo json_encode(["message" => "You are not authorized to perform this action."]);
     exit;

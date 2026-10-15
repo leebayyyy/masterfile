@@ -1,6 +1,10 @@
-import { requirePageRole, addLogout, getSession, logoutUser } from "./auth.js?v=8";
+import { requirePageRole, addLogout, getSession, logoutUser, confirmLogout } from "./auth.js?v=9";
 
 const page = window.location.pathname.split("/").pop() || "index.html";
+
+if (page === "ar_transactions.html") {
+  window.location.replace("payment.html");
+}
 
 const permissions = {
   "index.html": ["Admin", "Accounts Receivable Staff", "Manager", "Cashier"],
@@ -14,8 +18,7 @@ const permissions = {
   "payment.html": ["Admin", "Accounts Receivable Staff", "Manager"],
   "sales.html": ["Admin", "Cashier", "Manager"],
   "reports.html": ["Admin", "Accounts Receivable Staff", "Manager"],
-  "settings.html": ["Admin"],
-  "ar_transactions.html": ["Admin", "Accounts Receivable Staff", "Manager"],
+  "settings.html": ["Admin", "Manager"],
   "suki_card.html": ["Admin", "Manager"],
   "terminal_select.html": ["Cashier"],
 };
@@ -49,8 +52,7 @@ const navigationSections = [
     items: [
       ["ar_customer.html", "AR Customers", `<svg viewBox="0 0 16 16" fill="currentColor" class="app-sidebar-icon"><path d="M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/><path fill-rule="evenodd" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8m8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1"/></svg>`],
       ["ar_customer_type.html", "Customer Types", `<svg viewBox="0 0 16 16" fill="currentColor" class="app-sidebar-icon"><path d="M6 3.5A1.5 1.5 0 0 1 7.5 2h1A1.5 1.5 0 0 1 10 3.5v1A1.5 1.5 0 0 1 8.5 6v1H14a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-1 0V8h-5v1.5a.5.5 0 0 1-1 0V8H2v.5a.5.5 0 0 1-1 0v-1A.5.5 0 0 1 1.5 7H7V6A1.5 1.5 0 0 1 6 4.5zm-5 7A1.5 1.5 0 0 1 2.5 9h1A1.5 1.5 0 0 1 5 10.5v1A1.5 1.5 0 0 1 3.5 13h-1A1.5 1.5 0 0 1 1 11.5zm6 0A1.5 1.5 0 0 1 8.5 9h1a1.5 1.5 0 0 1 1.5 1.5v1A1.5 1.5 0 0 1 9.5 13h-1A1.5 1.5 0 0 1 7 11.5zm6 0a1.5 1.5 0 0 1 1.5-1.5h1a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5z"/></svg>`],
-      ["payment.html", "Payments & Collections", `<svg viewBox="0 0 16 16" fill="currentColor" class="app-sidebar-icon"><path d="M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/><path d="M0 4a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1zm3 0a2 2 0 0 1-2 2v4a2 2 0 0 1 2 2h10a2 2 0 0 1 2-2V6a2 2 0 0 1-2-2z"/></svg>`],
-      ["ar_transactions.html", "AR Transactions", `<svg viewBox="0 0 16 16" fill="currentColor" class="app-sidebar-icon"><path d="M1.92.506a.5.5 0 0 1 .434.14L3 1.293l.646-.647a.5.5 0 0 1 .708 0L5 1.293l.646-.647a.5.5 0 0 1 .708 0L7 1.293l.646-.647a.5.5 0 0 1 .708 0L9 1.293l.646-.647a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708 0l.646.647.646-.647A.5.5 0 0 1 14.5.5v15a.5.5 0 0 1-.854.354L13 15.207l-.646.647a.5.5 0 0 1-.708 0L11 15.207l-.646.647a.5.5 0 0 1-.708 0L9 15.207l-.646.647a.5.5 0 0 1-.708 0L7 15.207l-.646.647a.5.5 0 0 1-.708 0L5 15.207l-.646.647a.5.5 0 0 1-.708 0L3 15.207l-.646.647a.5.5 0 0 1-.854-.354zm3.08 4.494a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1zm0 3a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1zm0 3a.5.5 0 0 0 0 1h3a.5.5 0 0 0 0-1z"/></svg>`]
+      ["payment.html", "Payments & Collections", `<svg viewBox="0 0 16 16" fill="currentColor" class="app-sidebar-icon"><path d="M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/><path d="M0 4a1 1 0 0 1 1-1h14a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1zm3 0a2 2 0 0 1-2 2v4a2 2 0 0 1 2 2h10a2 2 0 0 1 2-2V6a2 2 0 0 1-2-2z"/></svg>`]
     ]
   },
   {
@@ -72,7 +74,6 @@ const pageTitles = {
   "ar_customer.html": "Accounts Receivable Customers",
   "ar_customer_type.html": "Customer Types",
   "payment.html": "Payments & Collections",
-  "ar_transactions.html": "AR Transactions & Invoices",
   "suki_card.html": "Suki Loyalty Cards",
   "sales.html": "POS Sales Register",
   "reports.html": "Financial Reports",
@@ -175,7 +176,7 @@ function renderSidebarLayout(existingNav, currentUser, session) {
 
   sidebar.appendChild(scrollContainer);
 
-  // Sidebar Footer: Logged-in Staff & Logout
+  // Sidebar Footer: Logged-in Staff (Single logout control is in Topbar header)
   const footer = document.createElement("div");
   footer.className = "app-sidebar-footer";
   footer.innerHTML = `
@@ -185,9 +186,6 @@ function renderSidebarLayout(existingNav, currentUser, session) {
       </div>
       <div class="app-sidebar-user-role">${currentUser.role_name}</div>
     </div>
-    <button type="button" class="app-sidebar-logout-btn" data-action="logout" title="Sign out of system">
-      Logout
-    </button>
   `;
   sidebar.appendChild(footer);
 
@@ -340,7 +338,7 @@ function renderCashierNavbar(nav, currentUser, session) {
   logoutBtn.className = "btn btn-outline-danger btn-sm px-3";
   logoutBtn.textContent = "Logout";
   logoutBtn.addEventListener("click", async () => {
-    await logoutUser();
+    await confirmLogout();
   });
 
   rightList.append(termSpan, userSpan, logoutBtn);

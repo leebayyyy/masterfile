@@ -35,7 +35,57 @@ require_once "auth-lib.php";
             INNER JOIN tblar_invoice i ON d.ar_invoice_id = i.ar_invoice_id
             INNER JOIN tblar_customers c ON i.ar_customer_id = c.ar_customer_id
             INNER JOIN tblpayment_method m ON h.payment_method_id = m.payment_method_id
-            ORDER BY h.payment_date DESC, h.payment_id DESC";
+            ORDER BY h.payment_id DESC";
+    return json_encode($conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
+  }
+
+  function getAllInvoices(){
+    include "connection-pdo.php";
+    // Auto-approve unbilled AR sales so they have invoices
+    $unbilled = $conn->query(
+      "SELECT s.sale_id, s.sale_date, s.total_amount, s.ar_customer_id, s.cashier_user_id, COALESCE(ct.days, 30) AS days
+       FROM tblsales s
+       INNER JOIN tblar_customers c ON c.ar_customer_id=s.ar_customer_id
+       LEFT JOIN tblar_customer_types ct ON ct.customer_type_id=c.customer_type_id
+       WHERE s.sale_type='AR' AND NOT EXISTS (SELECT 1 FROM tblar_invoice i WHERE i.sale_id=s.sale_id)"
+    )->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($unbilled as $ub) {
+      $invNumber = "INV-" . str_pad((string)$ub['sale_id'], 8, "0", STR_PAD_LEFT);
+      $ins = $conn->prepare(
+        "INSERT INTO tblar_invoice (invoice_number, ar_customer_id, sale_id, created_by_user_id, invoice_date, due_date, invoice_amount, balance, status)
+         VALUES (:number, :customerId, :saleId, :userId, :saleDate, (CAST(:saleDate2 AS date) + (CAST(:days AS integer) * INTERVAL '1 day'))::date, :amount, :balance, 'Approved')"
+      );
+      $ins->execute([
+        ":number" => $invNumber,
+        ":customerId" => $ub['ar_customer_id'],
+        ":saleId" => $ub['sale_id'],
+        ":userId" => $ub['cashier_user_id'],
+        ":saleDate" => $ub['sale_date'],
+        ":saleDate2" => $ub['sale_date'],
+        ":days" => (int)$ub['days'],
+        ":amount" => $ub['total_amount'],
+        ":balance" => $ub['total_amount']
+      ]);
+    }
+
+    $sql = "SELECT i.ar_invoice_id, i.invoice_number, i.invoice_date, i.due_date,
+                   i.invoice_amount, i.balance, i.status, c.customer_name, c.ar_customer_id,
+                   CASE
+                     WHEN COALESCE(i.balance, 0) <= 0 THEN 'Paid'
+                     WHEN i.due_date IS NULL THEN 'No due date'
+                     WHEN i.due_date < CURRENT_DATE THEN 'Overdue'
+                     WHEN i.due_date = CURRENT_DATE THEN 'Due today'
+                     ELSE 'Current'
+                   END AS collection_status,
+                   CASE
+                     WHEN COALESCE(i.balance, 0) > 0 AND i.due_date < CURRENT_DATE
+                     THEN (CURRENT_DATE - i.due_date)
+                     ELSE 0
+                   END AS days_overdue
+            FROM tblar_invoice i
+            INNER JOIN tblar_customers c ON c.ar_customer_id = i.ar_customer_id
+            WHERE i.status <> 'Pending'
+            ORDER BY i.ar_invoice_id DESC";
     return json_encode($conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
   }
 
@@ -104,7 +154,8 @@ require_once "auth-lib.php";
       $headerStmt = $conn->prepare(
         "INSERT INTO tblpayment_header
           (payment_date, amount, payment_method_id, processed_by_user_id, reference_number, notes)
-         VALUES (:paymentDate, :amount, :paymentMethodId, :processedByUserId, :referenceNumber, :notes)"
+         VALUES (:paymentDate, :amount, :paymentMethodId, :processedByUserId, :referenceNumber, :notes)
+         RETURNING payment_id"
       );
       $headerStmt->execute([
         ":paymentDate" => $paymentDate,
@@ -114,7 +165,7 @@ require_once "auth-lib.php";
         ":referenceNumber" => $referenceNumber,
         ":notes" => $data['notes'] ?? null
       ]);
-      $paymentId = $conn->lastInsertId();
+      $paymentId = $headerStmt->fetchColumn();
 
       $detailStmt = $conn->prepare(
         "INSERT INTO tblpayment_detail (payment_id, ar_invoice_id, applied_amount, applied_date)
@@ -167,6 +218,10 @@ require_once "auth-lib.php";
     case "getAllPayments":
       requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager"]);
       echo getAllPayments();
+      break;
+    case "getAllInvoices":
+      requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager"]);
+      echo getAllInvoices();
       break;
     case "insertPayment":
       requireRoles(["Accounts Receivable Staff"]);

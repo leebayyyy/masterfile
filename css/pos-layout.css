@@ -406,37 +406,273 @@ body.pos-body {
   }
 }
 
-/* Desktop Screens (992px - 1439.98px) */
+/* Sleek POS Scrollbars */
+.pos-cart-table-wrapper::-webkit-scrollbar,
+.pos-payment-card::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.pos-cart-table-wrapper::-webkit-scrollbar-track,
+.pos-payment-card::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.pos-cart-table-wrapper::-webkit-scrollbar-thumb,
+.pos-payment-card::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+
+.pos-cart-table-wrapper::-webkit-scrollbar-thumb:hover,
+.pos-payment-card::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* ==========================================================================
+   Fixed-Viewport POS Terminal Layout (Desktop >= 992px)
+   Entire screen fits within 100vh - Zero page-level vertical scrolling
+   Only the cart table scrolls internally with sticky header
+   ========================================================================== */
+
 @media (min-width: 992px) {
-  .pos-cart-table-wrapper {
-    min-height: 380px;
-    max-height: calc(100vh - 290px);
+  html:has(body.pos-terminal-active),
+  body.pos-body.pos-terminal-active {
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-height: 100vh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
   }
 
-  /* Keep Payment & Total sticky on Desktop */
+  body.pos-body.pos-terminal-active {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  body.pos-body.pos-terminal-active > nav.navbar {
+    flex: 0 0 auto !important;
+    z-index: 1030;
+  }
+
+  body.pos-body.pos-terminal-active > main.container-fluid {
+    flex: 1 1 0px !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+  }
+
+  body.pos-body.pos-terminal-active #view-checkout {
+    flex: 1 1 0px !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  body.pos-body.pos-terminal-active #view-checkout.d-none {
+    display: none !important;
+  }
+
+  body.pos-body.pos-terminal-active #view-checkout .pos-station-header {
+    flex: 0 0 auto !important;
+    margin-bottom: 0.25rem !important;
+    padding: 0.35rem 0.75rem !important;
+  }
+
+  body.pos-body.pos-terminal-active #sale-form {
+    flex: 1 1 0px !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  body.pos-body.pos-terminal-active #sale-form > .row,
+  body.pos-body.pos-terminal-active .pos-terminal-row {
+    flex: 1 1 0px !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    --bs-gutter-y: 0 !important;
+  }
+
+  body.pos-body.pos-terminal-active .pos-terminal-row > * {
+    margin-top: 0 !important;
+  }
+
+  /* Left Column: Fixed Terminal Flex Layout */
+  .pos-left-column {
+    height: 100% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .pos-barcode-container {
+    flex: 0 0 auto !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  .pos-barcode-container .input-group-lg {
+    min-height: 42px;
+  }
+
+  .pos-barcode-container .input-group-text {
+    font-size: 0.95rem;
+    padding: 0.35rem 0.75rem;
+  }
+
+  .pos-barcode-input {
+    font-size: 1.05rem;
+    padding: 0.4rem 0.75rem;
+  }
+
+  .pos-barcode-container .card {
+    margin-top: 0.25rem !important;
+    padding: 0.25rem 0.5rem !important;
+  }
+
+  .pos-scan-feedback {
+    min-height: 1.15rem !important;
+    font-size: 0.785rem !important;
+    padding: 0.05rem 0.25rem !important;
+    margin-top: 0.1rem !important;
+  }
+
+  /* Cart Card & Internal Scroll Container */
+  .pos-cart-card {
+    flex: 1 1 0px !important;
+    min-height: 80px !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    margin-bottom: 0.25rem !important;
+    overflow: hidden !important;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.5rem;
+    background: #ffffff;
+  }
+
+  .pos-cart-table-wrapper {
+    flex: 1 1 0px !important;
+    height: 100% !important;
+    min-height: 60px !important;
+    max-height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+    position: relative !important;
+  }
+
+  .pos-cart-table {
+    margin-bottom: 0;
+    width: 100%;
+  }
+
+  .pos-cart-table thead th {
+    position: sticky !important;
+    top: 0 !important;
+    background: #f1f5f9 !important;
+    color: #334155 !important;
+    font-weight: 700 !important;
+    border-bottom: 2px solid #cbd5e1 !important;
+    z-index: 10 !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    padding: 0.5rem 0.5rem !important;
+  }
+
+  /* Hotkey Toolbar docked at bottom */
+  .pos-hotkey-dock {
+    flex: 0 0 auto !important;
+    margin-bottom: 0 !important;
+    padding: 0.3rem 0.5rem !important;
+    gap: 0.25rem !important;
+  }
+
+  .pos-hotkey-btn {
+    padding: 0.25rem 0.45rem !important;
+    font-size: 0.75rem !important;
+    min-height: 28px !important;
+  }
+
+  /* Right Column (Payment Column): Fixed Terminal Layout */
   .pos-payment-column {
-    position: sticky;
-    top: 4.5rem;
+    height: 100% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    position: static !important;
+    top: auto !important;
+    overflow: hidden !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .pos-total-display {
+    flex: 0 0 auto !important;
+    margin-bottom: 0.25rem !important;
+    padding: 0.55rem 0.85rem !important;
+  }
+
+  .pos-total-label {
+    font-size: 0.75rem;
+    margin-bottom: 0.15rem;
   }
 
   .pos-total-amount {
-    font-size: 2.75rem;
+    font-size: 2.35rem;
+    line-height: 1.1;
+  }
+
+  .pos-payment-card {
+    flex: 1 1 0px !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    margin-bottom: 0.25rem !important;
+    padding: 0.5rem 0.75rem !important;
+  }
+
+  .pos-payment-actions {
+    flex: 0 0 auto !important;
+    margin-top: auto !important;
+    margin-bottom: 0 !important;
+  }
+
+  #btn-open-tender {
+    padding-top: 0.65rem !important;
+    padding-bottom: 0.65rem !important;
+    font-size: 1.25rem !important;
+  }
+
+  #btn-cancel-sale {
+    padding-top: 0.3rem !important;
+    padding-bottom: 0.3rem !important;
+    font-size: 0.875rem !important;
   }
 }
 
 /* Wide Desktop Screens (1440px and larger) */
 @media (min-width: 1440px) {
-  .pos-cart-table-wrapper {
-    min-height: 480px;
-    max-height: calc(100vh - 270px);
-  }
-
   .pos-total-amount {
-    font-size: 3.25rem;
+    font-size: 2.85rem;
   }
 
-  .pos-cart-table {
-    font-size: 1rem;
+  #btn-open-tender {
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.75rem !important;
+    font-size: 1.35rem !important;
   }
 }
 
