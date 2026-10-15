@@ -2,7 +2,7 @@ import { updateModal } from "./modules/pos_terminal-update.js?v=3";
 import { deleteModal } from "./modules/pos_terminal-delete.js?v=3";
 import { getSession } from "./auth.js?v=3";
 
-const baseApiUrl = new URL("../api", import.meta.url).href;
+const baseApiUrl = "/api";
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 let canManageTerminals = false;

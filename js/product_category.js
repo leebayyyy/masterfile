@@ -2,7 +2,7 @@ import { updateModal } from "./modules/product_category-update.js";
 import { deleteModal } from "./modules/product_category-delete.js";
 import { showToast, showError } from "./swal-helper.js";
 
-const baseApiUrl = new URL("../api", import.meta.url).href;
+const baseApiUrl = "/api";
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 document.addEventListener("DOMContentLoaded", () => {

@@ -1,4 +1,4 @@
-const authUrl = new URL("../api/auth.php", import.meta.url).href;
+const authUrl = "/api/auth.php";
 
 const passwordInput = document.getElementById("password");
 const usernameInput = document.getElementById("username");

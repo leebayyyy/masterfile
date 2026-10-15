@@ -2,7 +2,7 @@ import { updateModal } from "./modules/user-update.js";
 import { deactivateModal } from "./modules/user-delete.js";
 import { showToast, showError as showSwalError } from "./swal-helper.js";
 
-const baseApiUrl = new URL("../api", import.meta.url).href;
+const baseApiUrl = "/api";
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 let roleList = [];

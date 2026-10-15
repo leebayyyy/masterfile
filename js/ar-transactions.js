@@ -1,6 +1,6 @@
 import { showToast, showError, showSuccess } from "./swal-helper.js";
 
-const arUrl = new URL("../api/ar_transactions.php", import.meta.url).href;
+const arUrl = "/api/ar_transactions.php";
 let arData;
 
 document.addEventListener("DOMContentLoaded", () => {

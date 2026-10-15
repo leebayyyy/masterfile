@@ -1,6 +1,6 @@
 import { getSession } from "./auth.js?v=8";
 
-const reportsApiUrl = new URL("../api/reports.php", import.meta.url).href;
+const reportsApiUrl = "/api/reports.php";
 
 document.addEventListener("DOMContentLoaded", async () => {
   const root = document.getElementById("dashboard-root");

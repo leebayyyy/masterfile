@@ -1,6 +1,6 @@
 import { getSession } from "./auth.js?v=3";
 
-const apiUrl = new URL("../api/pos_terminal.php", import.meta.url).href;
+const apiUrl = "/api/pos_terminal.php";
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("terminal-select-form").addEventListener("submit", selectTerminal);

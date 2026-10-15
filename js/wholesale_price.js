@@ -2,7 +2,7 @@ import { updateModal } from "./modules/wholesale_price-update.js";
 import { deleteModal } from "./modules/wholesale_price-delete.js";
 import { showToast, showError } from "./swal-helper.js";
 
-const baseApiUrl = new URL("../api", import.meta.url).href;
+const baseApiUrl = "/api";
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 let productList = [];

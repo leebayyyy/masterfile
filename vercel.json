@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "_comment": "IMPORTANT: Replace YOUR-RENDER-SERVICE with your actual Render service name (e.g., https://pos-ar-api.onrender.com)",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://YOUR-RENDER-SERVICE.onrender.com/api/$1"
+    },
+    {
+      "source": "/api",
+      "destination": "https://YOUR-RENDER-SERVICE.onrender.com/api/"
+    }
+  ]
+}

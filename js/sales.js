@@ -1,7 +1,7 @@
 import { getSession } from "./auth.js?v=3";
 import { showToast, showError, showSuccess, showConfirm } from "./swal-helper.js";
 
-const apiUrl = new URL("../api/sales.php", import.meta.url).href;
+const apiUrl = "/api/sales.php";
 let products = [];
 let cart = [];
 let currentUser = null;

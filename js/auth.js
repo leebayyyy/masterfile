@@ -1,7 +1,7 @@
-const authApiUrl = new URL("../api/auth.php", import.meta.url).href;
-const defaultBaseApiUrl = new URL("../api", import.meta.url).href;
+const authApiUrl = "/api/auth.php";
+const defaultBaseApiUrl = "/api";
 
-if (!sessionStorage.getItem("baseAPIUrl")) {
+if (!sessionStorage.getItem("baseAPIUrl") || sessionStorage.getItem("baseAPIUrl").includes("localhost") || sessionStorage.getItem("baseAPIUrl").startsWith("http")) {
   sessionStorage.setItem("baseAPIUrl", defaultBaseApiUrl);
 }
 

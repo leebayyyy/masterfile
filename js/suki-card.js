@@ -1,7 +1,7 @@
 import { getSession } from "./auth.js?v=3";
 import { showToast, showSuccess, showError as showSwalError } from "./swal-helper.js";
 
-const sukiUrl = new URL("../api/suki_card.php", import.meta.url).href;
+const sukiUrl = "/api/suki_card.php";
 let canManageCards = false;
 let sukiSortDirection = "desc";
 
