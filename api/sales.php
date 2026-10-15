@@ -221,9 +221,14 @@ function createSale($json) {
     http_response_code(422);
     return json_encode(["returnValue" => 0, "message" => "A registered SUKI card can only be selected when the customer has a card."]);
   }
+
+  $step = 'begin'; // Step marker for debug instrumentation
   try {
     $conn->beginTransaction();
+
+    // --- payment_method_lock ---
     if (!$isAr) {
+      $step = 'payment_method_lock';
       $methodStmt = $conn->prepare(
         "SELECT payment_method_id FROM tblpayment_method
          WHERE payment_method_id=:methodId AND is_active=1 FOR UPDATE"
@@ -233,6 +238,9 @@ function createSale($json) {
         throw new RuntimeException("Select a valid active payment method.");
       }
     }
+
+    // --- terminal_lock ---
+    $step = 'terminal_lock';
     $terminalStmt = $conn->prepare(
       "SELECT pos_terminal_id FROM tblpos_terminals WHERE pos_terminal_id=:terminalId FOR UPDATE"
     );
@@ -242,7 +250,10 @@ function createSale($json) {
     if (!$terminalStmt->fetchColumn()) {
       throw new RuntimeException("You are not assigned to the selected POS terminal.");
     }
+
+    // --- suki_card_lock ---
     if (!$isAr && $sukiStatus === 'Has' && $requestedSukiCardId) {
+      $step = 'suki_card_lock';
       $cardStmt = $conn->prepare(
         "SELECT s.sku_card_id, s.ar_customer_id, s.points_balance
          FROM tblsku_card s
@@ -260,7 +271,10 @@ function createSale($json) {
       $customerId = (int)$card['ar_customer_id'];
       $sukiPointsBalance = (float)($card['points_balance'] ?? 0);
     }
+
+    // --- customer_lock ---
     if ($isAr) {
+      $step = 'customer_lock';
       $customerStmt = $conn->prepare("SELECT ar_customer_id, credit_limit FROM tblar_customers WHERE ar_customer_id=:customerId AND is_active=1 FOR UPDATE");
       $customerStmt->execute([":customerId"=>$customerId]);
       $customer = $customerStmt->fetch(PDO::FETCH_ASSOC);
@@ -268,6 +282,8 @@ function createSale($json) {
         throw new RuntimeException("The selected AR customer is not available.");
       }
       $creditLimit = (float)$customer['credit_limit'];
+
+      $step = 'suki_card_lock';
       $cardStmt = $conn->prepare("SELECT s.sku_card_id, s.points_balance FROM tblsku_card s WHERE s.ar_customer_id=:customerId AND s.is_active=1 AND (s.expiry_date IS NULL OR s.expiry_date >= CURRENT_DATE) ORDER BY s.issued_date DESC, s.sku_card_id DESC FOR UPDATE");
       $cardStmt->execute([":customerId"=>$customerId]);
       $customerCards = $cardStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -280,9 +296,12 @@ function createSale($json) {
         $sukiPointsBalance = $customerCards[0]['points_balance'] === null ? 0 : (float)$customerCards[0]['points_balance'];
       }
     }
+
+    // --- product_lookup ---
     $subtotal = 0;
     $detailRows = [];
-    foreach ($items as $item) {
+    foreach ($items as $idx => $item) {
+      $step = 'product_lookup[' . $idx . ']';
       $productStmt = $conn->prepare(
         "SELECT p.price, COALESCE(pr.discount_rate, 0) AS promo_rate, pr.promo_id, pr.promo_name
          FROM tblproducts p
@@ -300,6 +319,9 @@ function createSale($json) {
       );
       $productStmt->execute([":productId" => $item['productId']]);
       $product = $productStmt->fetch(PDO::FETCH_ASSOC);
+      if (!$product) {
+        throw new RuntimeException("Product ID " . ($item['productId'] ?? '?') . " was not found or is inactive.");
+      }
       $unitPrice = (float)$product['price'];
       $quantity = filter_var($item['quantity'] ?? null, FILTER_VALIDATE_FLOAT);
       if (!$quantity || $quantity <= 0) {
@@ -321,17 +343,21 @@ function createSale($json) {
     $tax = round($total - $vatableSales, 2);
     $price = $vatableSales;
 
+    // --- suki_points_update ---
     if ($sukiStatus === 'Has') {
       $pointsEarned = max(1, (int)floor($total / 100));
       $newPointsBalance = round(($sukiPointsBalance ?? 0) + $pointsEarned, 2);
       $sukiPointsBalance = $newPointsBalance;
       if ($sukiCardId) {
+        $step = 'suki_points_update';
         $updateCardStmt = $conn->prepare("UPDATE tblsku_card SET points_balance=:newBal WHERE sku_card_id=:cardId");
         $updateCardStmt->execute([":newBal" => $newPointsBalance, ":cardId" => $sukiCardId]);
       }
     }
 
+    // --- credit_exposure ---
     if ($isAr) {
+      $step = 'credit_exposure';
       $exposureStmt = $conn->prepare(
         "SELECT
            COALESCE((SELECT SUM(balance) FROM tblar_invoice
@@ -352,18 +378,28 @@ function createSale($json) {
         );
       }
     }
+
+    // --- insert_sale ---
+    $step = 'insert_sale';
     $balance = $isAr ? $total : 0;
     $saleStmt = $conn->prepare("INSERT INTO tblsales(pos_terminal_id, cashier_user_id, sale_date, sale_type, payment_method_id, ar_customer_id, price, tax_total, total_amount, balance, suki_card_id, suki_card_status, suki_points_balance)
       VALUES(:terminalId, :cashierId, CURRENT_DATE, :saleType, :paymentMethodId, :customerId, :price, :tax, :total, :balance, :sukiCardId, :sukiStatus, :sukiPoints)
       RETURNING sale_id");
     $saleStmt->execute([":terminalId"=>$terminalId, ":cashierId"=>$data['cashierUserId'], ":saleType"=>$data['saleType'], ":paymentMethodId"=>$isAr ? null : $paymentMethodId, ":customerId"=>$customerId, ":price"=>$price, ":tax"=>$tax, ":total"=>$total, ":balance"=>$balance, ":sukiCardId"=>$sukiCardId, ":sukiStatus"=>$sukiStatus, ":sukiPoints"=>$sukiPointsBalance]);
     $saleId = $saleStmt->fetchColumn();
+
+    // --- insert_detail ---
+    $step = 'insert_detail';
     $detailStmt = $conn->prepare("INSERT INTO tblsales_detail(sale_id, product_id, promo_id, quantity, unit_price, discount, promo_discount, line_total, cost_at_sale)
       VALUES(:saleId, :productId, :promoId, :quantity, :unitPrice, :discount, :promoDiscount, :lineTotal, :cost)");
-    foreach ($detailRows as $row) {
+    foreach ($detailRows as $dIdx => $row) {
+      $step = 'insert_detail[' . $dIdx . ']';
       $detailStmt->execute([":saleId"=>$saleId, ":productId"=>$row[0], ":promoId"=>$row[1], ":quantity"=>$row[2], ":unitPrice"=>$row[3], ":discount"=>$row[4], ":promoDiscount"=>$row[5], ":lineTotal"=>$row[6], ":cost"=>$row[7]]);
     }
+
+    // --- insert_invoice ---
     if ($isAr) {
+      $step = 'insert_invoice';
       $termsStmt = $conn->prepare(
         "SELECT COALESCE(ct.days, 30) FROM tblar_customers c
          LEFT JOIN tblar_customer_types ct ON ct.customer_type_id=c.customer_type_id
@@ -388,11 +424,15 @@ function createSale($json) {
         ":balance" => $total
       ]);
     }
+
+    // --- delete_held ---
+    $step = 'delete_held';
     $heldId = filter_var($data['heldId'] ?? null, FILTER_VALIDATE_INT);
     if ($heldId && $heldId > 0) {
       $delHeld = $conn->prepare("DELETE FROM tblheld_transactions WHERE held_id=:heldId");
       $delHeld->execute([":heldId"=>$heldId]);
     }
+
     $conn->commit();
     return json_encode([
       "returnValue" => 1,
@@ -404,7 +444,16 @@ function createSale($json) {
   } catch (Throwable $e) {
     if ($conn->inTransaction()) $conn->rollBack();
     http_response_code(422);
-    return json_encode(["returnValue"=>0, "message"=>$e->getMessage()]);
+    // TODO: REMOVE DEBUG FIELDS AFTER FIX — start
+    return json_encode([
+      "returnValue" => 0,
+      "message" => $e->getMessage(),
+      "debug_step" => $step,
+      "debug_code" => $e->getCode(),
+      "debug_file" => basename($e->getFile()) . ':' . $e->getLine(),
+      "debug_trace" => $e->getTraceAsString()
+    ]);
+    // TODO: REMOVE DEBUG FIELDS AFTER FIX — end
   }
 }
 
