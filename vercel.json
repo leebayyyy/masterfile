@@ -1,14 +1,8 @@
 {
-  "version": 2,
-  "_comment": "IMPORTANT: Replace YOUR-RENDER-SERVICE with your actual Render service name (e.g., https://pos-ar-api.onrender.com)",
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://pos-api.clevai.dev/api/$1"
-    },
-    {
-      "source": "/api",
-      "destination": "https://pos-api.clevai.dev/api/"
+      "source": "/api/:path*",
+      "destination": "https://pos-api.clevai.dev/api/:path*"
     }
   ]
 }
