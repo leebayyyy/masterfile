@@ -1,7 +1,9 @@
 import { getSession } from "./auth.js?v=3";
+import { showToast, showSuccess, showError as showSwalError } from "./swal-helper.js";
 
-const sukiUrl = new URL("../api/suki_card.php", import.meta.url).href;
+const sukiUrl = "/api/suki_card.php";
 let canManageCards = false;
+let sukiSortDirection = "desc";
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("card-form").addEventListener("submit", saveCard);
@@ -34,20 +36,45 @@ const loadCards = async () => {
       '<option value="">-- SELECT CUSTOMER --</option>' +
       data.customers.map((customer) =>
         `<option value="${customer.ar_customer_id}">${customer.customer_name}</option>`).join("");
+    const cardInput = document.getElementById("card_number");
+    if (cardInput && data.nextCardNumber) {
+      cardInput.value = data.nextCardNumber;
+      cardInput.readOnly = true;
+    }
   }
-  document.getElementById("cards").innerHTML = data.cards.length
+
+  const sortedCards = [...data.cards].sort((a, b) => {
+    const idA = Number(a.sku_card_id || 0);
+    const idB = Number(b.sku_card_id || 0);
+    return sukiSortDirection === "desc" ? idB - idA : idA - idB;
+  });
+
+  document.getElementById("cards").innerHTML = sortedCards.length
     ? `<div class="table-responsive"><table class="table table-striped table-sm">
-        <thead><tr><th>Card</th><th>Customer</th><th>Issue Date</th><th>Expiry</th><th>Points</th>
-        <th>Sales</th><th>Sales Total</th><th>Last Sale</th><th>Status</th>${canManageCards ? "<th>Action</th>" : ""}</tr></thead>
-        <tbody>${data.cards.map((card) => `
-          <tr><td>${card.card_number}</td><td>${card.customer_name}</td>
-          <td>${card.issued_date || ""}</td><td>${card.expiry_date || ""}</td>
-          <td>${Number(card.points_balance || 0).toFixed(0)}</td>
-          <td>${card.sale_count}</td><td>${Number(card.sales_total || 0).toFixed(2)}</td>
-          <td>${card.last_sale_date || ""}</td><td>${card.is_active == 1 ? "Active" : "Inactive"}</td>
-          ${canManageCards ? `<td><button class="btn btn-sm btn-outline-secondary" data-id="${card.sku_card_id}" data-active="${card.is_active}">${card.is_active == 1 ? "Deactivate" : "Activate"}</button></td>` : ""}
+        <thead><tr>
+          <th id="th-suki-id" style="cursor: pointer; user-select: none;" title="Click to sort by Suki ID">
+            SUKI ID <span class="sort-icon">${sukiSortDirection === "desc" ? "▼" : "▲"}</span>
+          </th>
+          <th>Card</th><th>Customer</th><th>Issue Date</th><th>Expiry</th><th>Points</th>
+          <th>Sales</th><th>Sales Total</th><th>Last Sale</th><th>Status</th>${canManageCards ? "<th>Action</th>" : ""}
+        </tr></thead>
+        <tbody>${sortedCards.map((card) => `
+          <tr>
+            <td class="font-monospace fw-bold">#${card.sku_card_id}</td>
+            <td>${card.card_number}</td><td>${card.customer_name}</td>
+            <td>${card.issued_date || ""}</td><td>${card.expiry_date || ""}</td>
+            <td>${Number(card.points_balance || 0).toFixed(0)}</td>
+            <td>${card.sale_count}</td><td>₱${Number(card.sales_total || 0).toFixed(2)}</td>
+            <td>${card.last_sale_date || ""}</td><td>${card.is_active == 1 ? "Active" : "Inactive"}</td>
+            ${canManageCards ? `<td><button class="btn btn-sm btn-outline-secondary" data-id="${card.sku_card_id}" data-active="${card.is_active}">${card.is_active == 1 ? "Deactivate" : "Activate"}</button></td>` : ""}
           </tr>`).join("")}</tbody></table></div>`
     : '<p class="text-muted">No SUKI cards registered.</p>';
+
+  document.getElementById("th-suki-id")?.addEventListener("click", () => {
+    sukiSortDirection = sukiSortDirection === "desc" ? "asc" : "desc";
+    loadCards();
+  });
+
   document.querySelectorAll("[data-id]").forEach((button) => {
     button.addEventListener("click", () =>
       runAction(() => toggle(button.dataset.id, button.dataset.active == 1)));
@@ -67,7 +94,9 @@ const saveCard = async (event) => {
   await runAction(async () => {
     await axios.post(sukiUrl, formData, { withCredentials: true });
     event.target.reset();
+    bootstrap.Modal.getInstance(document.getElementById("card-modal"))?.hide();
     await loadCards();
+    showToast("SUKI card registered successfully!", "success");
   });
 };
 

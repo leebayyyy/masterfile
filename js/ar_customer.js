@@ -1,12 +1,14 @@
 import { updateModal } from "./modules/ar_customer-update.js";
 import { deactivateModal } from "./modules/ar_customer-delete.js";
+import { showToast, showError, showSuccess } from "./swal-helper.js";
 
-const baseApiUrl = new URL("../api", import.meta.url).href;
+const baseApiUrl = "/api";
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 let arCustomerTypeList = [];
 let canManageCustomers = false;
 let canManageCreditLimits = false;
+
 document.addEventListener("DOMContentLoaded", () => {
   const addFieldsHtml = document.getElementById("blank-main-div").innerHTML;
   document.getElementById("btn-add").addEventListener("click", () => {
@@ -47,105 +49,211 @@ const loadPermissions = async () => {
 
 const loadArCustomerType = async () => {
   const select = document.getElementById("customer_type_id");
-  const response = await axios.get(`${baseApiUrl}/ar_customer_type.php`, {
-    params: { operation: "getAllCustomerTypes" },
-  });
-  if (response.status == 200) {
-    arCustomerTypeList = response.data;
-    select.innerHTML = '<option value="">-- SELECT CUSTOMER TYPE --</option>';
-    arCustomerTypeList.forEach((customerType) => {
-      let option = document.createElement("option");
-      option.innerText = customerType.type_name;
-      option.value = customerType.customer_type_id;
-      select.appendChild(option);
+  try {
+    const response = await axios.get(`${baseApiUrl}/ar_customer_type.php`, {
+      params: { operation: "getAllCustomerTypes" },
     });
-  } else {
-    alert("Error!");
+    if (response.status == 200) {
+      arCustomerTypeList = response.data;
+      select.innerHTML = '<option value="">-- SELECT CUSTOMER TYPE --</option>';
+      arCustomerTypeList.forEach((customerType) => {
+        let option = document.createElement("option");
+        option.innerText = customerType.type_name;
+        option.value = customerType.customer_type_id;
+        select.appendChild(option);
+      });
+    }
+  } catch (err) {
+    showError("Error loading customer types.");
   }
 };
 
-const displayRecords = async () => {
-  const response = await axios.get(`${baseApiUrl}/ar_customer.php`, {
-    params: { operation: "getAllCustomers" },
+let allCustomerRecords = [];
+let customerSortOrder = "desc";
+
+const applySortAndRender = () => {
+  allCustomerRecords.sort((a, b) => {
+    const idA = Number(a.ar_customer_id || 0);
+    const idB = Number(b.ar_customer_id || 0);
+    return customerSortOrder === "desc" ? idB - idA : idA - idB;
   });
-  if (response.status == 200) {
-    displayRecordsTable(response.data);
-  } else {
-    alert("Error!");
+  displayRecordsTable(allCustomerRecords);
+};
+
+const displayRecords = async () => {
+  try {
+    const response = await axios.get(`${baseApiUrl}/ar_customer.php`, {
+      params: { operation: "getAllCustomers" },
+    });
+    if (response.status == 200) {
+      allCustomerRecords = Array.isArray(response.data) ? response.data : [];
+      applySortAndRender();
+    }
+  } catch (err) {
+    showError("Unable to fetch customer records.");
   }
 };
 
 const displayRecordsTable = (records) => {
   const tableDiv = document.getElementById("table-div");
   tableDiv.innerHTML = "";
-  const table = document.createElement("table");
-  table.classList.add("table", "table-hover", "table-striped", "table-sm");
 
-  const thead = document.createElement("thead");
-  thead.innerHTML = `
-      <tr>
-        <th>CUSTOMER NAME</th>
-        <th>CUSTOMER TYPE</th>
-        <th>CONTACT NAME</th>
-        <th>CONTACT PHONE</th>
-        <th>BILLING ADDRESS</th>
-        <th>EMAIL</th>
-        <th>CREDIT LIMIT</th>
-        <th>OUTSTANDING</th>
-        <th>AVAILABLE CREDIT</th>
-        <th>STATUS</th>
-        ${canManageCustomers || canManageCreditLimits ? "<th>ACTION</th>" : ""}
-      </tr>
-    `;
-  table.appendChild(thead);
+  if (!records.length) {
+    tableDiv.innerHTML = '<div class="alert alert-secondary text-center">No AR customers found.</div>';
+    return;
+  }
 
-  const tbody = document.createElement("tbody");
+  // 1. Mobile Cards View (< 768px)
+  const mobileContainer = document.createElement("div");
+  mobileContainer.className = "d-md-none";
+
   records.forEach((customer) => {
-    let row = document.createElement("tr");
-    row.innerHTML = `
-        <td>${customer.customer_name}</td>
-        <td>${customer.type_name}</td>
-        <td>${customer.contact_name}</td>
-        <td>${customer.contact_phone}</td>
-        <td>${customer.billing_address}</td>
-        <td>${customer.email ?? ""}</td>
-        <td>${Number(customer.credit_limit || 0).toFixed(2)}</td>
-        <td>${Number(customer.credit_exposure || 0).toFixed(2)}</td>
-        <td>${Number(customer.available_credit || 0).toFixed(2)}</td>
-        <td>${customer.is_active == 1 ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
-        ${canManageCustomers || canManageCreditLimits ? `<td>
-          ${canManageCreditLimits ? "<button type='button' class='btn btn-primary btn-sm btn-credit-limit'>Credit Limit</button>" : ""}
-          ${canManageCustomers ? `<button type='button' class='btn btn-success btn-sm btn-update'>Update</button>
-          ${customer.is_active == 1
-            ? `<button type='button' class='btn btn-danger btn-sm btn-delete'>Deactivate</button>`
-            : `<button type='button' class='btn btn-secondary btn-sm btn-restore'>Restore</button>`}` : ""}
-        </td>` : ""}
-      `;
-    tbody.appendChild(row);
+    const card = document.createElement("div");
+    card.className = "customer-card";
+    const statusBadge = customer.is_active == 1
+      ? '<span class="badge bg-success">Active</span>'
+      : '<span class="badge bg-secondary">Inactive</span>';
 
-    if (canManageCreditLimits) {
-      row.querySelector(".btn-credit-limit").addEventListener("click", () => {
-        updateCreditLimitModal(customer);
-      });
-    }
-    if (canManageCustomers) {
-      row.querySelector(".btn-update").addEventListener("click", () => {
-        updateModal(customer.ar_customer_id, arCustomerTypeList, displayRecords);
-      });
+    const mobileActionButtons = (canManageCustomers || canManageCreditLimits) ? `
+      <div class="d-flex flex-wrap gap-1 mt-2 pt-2 border-top justify-content-end">
+        ${canManageCreditLimits ? `<button type="button" class="btn btn-sm btn-action-compact btn-credit-limit" data-id="${customer.ar_customer_id}">Credit Limit</button>` : ""}
+        ${canManageCustomers ? `<button type="button" class="btn btn-sm btn-action-compact btn-update" data-id="${customer.ar_customer_id}">Update</button>` : ""}
+        ${canManageCustomers && customer.is_active == 1 ? `<button type="button" class="btn btn-sm btn-action-compact btn-delete" style="background-color: #dc3545 !important; color: #ffffff !important; border-color: #dc3545 !important;" data-id="${customer.ar_customer_id}">Deactivate</button>` : ""}
+        ${canManageCustomers && customer.is_active != 1 ? `<button type="button" class="btn btn-sm btn-action-compact btn-restore" style="background-color: #198754 !important; color: #ffffff !important; border-color: #198754 !important;" data-id="${customer.ar_customer_id}">Restore</button>` : ""}
+      </div>` : "";
 
-      if (customer.is_active == 1) {
-        row.querySelector(".btn-delete").addEventListener("click", () => {
-          deactivateModal(customer.ar_customer_id, displayRecords);
-        });
-      } else {
-        row.querySelector(".btn-restore").addEventListener("click", () => {
-          restoreRecord(customer.ar_customer_id);
-        });
-      }
-    }
+    card.innerHTML = `
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <div class="me-2">
+          <div class="d-flex align-items-center gap-1">
+            <span class="badge bg-light text-secondary border font-monospace small">#${customer.ar_customer_id}</span>
+            <span class="fw-bold text-dark fs-6 text-break">${customer.customer_name}</span>
+          </div>
+          <div class="small text-muted">${customer.type_name || "General"}</div>
+        </div>
+        <div class="d-flex align-items-center gap-1 flex-shrink-0">
+          ${statusBadge}
+        </div>
+      </div>
+      <div class="row g-1 text-center my-2">
+        <div class="col-4">
+          <div class="customer-stat-box">
+            <div class="customer-stat-label">Limit</div>
+            <div class="customer-stat-val text-dark">${Number(customer.credit_limit || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="customer-stat-box">
+            <div class="customer-stat-label">Balance</div>
+            <div class="customer-stat-val text-danger">${Number(customer.credit_exposure || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="customer-stat-box">
+            <div class="customer-stat-label">Avail</div>
+            <div class="customer-stat-val text-success">${Number(customer.available_credit || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
+        </div>
+      </div>
+      ${customer.contact_phone ? `<div class="small text-muted mt-1 text-truncate"><span class="fw-semibold">Phone:</span> ${customer.contact_phone}</div>` : ""}
+      ${customer.billing_address ? `<div class="small text-muted text-truncate"><span class="fw-semibold">Addr:</span> ${customer.billing_address}</div>` : ""}
+      ${mobileActionButtons}
+    `;
+    mobileContainer.appendChild(card);
   });
-  table.appendChild(tbody);
-  tableDiv.appendChild(table);
+
+  // 2. Desktop Table View (>= 768px)
+  const desktopContainer = document.createElement("div");
+  desktopContainer.className = "d-none d-md-block table-responsive";
+
+  const table = document.createElement("table");
+  table.className = "table table-hover table-striped table-sm align-middle table-ar-compact w-100 mb-0";
+
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th class="sortable-customer-id text-nowrap" style="cursor: pointer; user-select: none;" title="Click to sort by ID">
+          ID <span class="text-primary">${customerSortOrder === "desc" ? "▼" : "▲"}</span>
+        </th>
+        <th>Customer</th>
+        <th>Type</th>
+        <th class="d-none d-lg-table-cell">Phone</th>
+        <th class="d-none d-xl-table-cell">Address</th>
+        <th class="text-end">Limit</th>
+        <th class="text-end">Balance</th>
+        <th class="text-end">Avail</th>
+        <th class="text-center">Status</th>
+        ${canManageCustomers || canManageCreditLimits ? "<th class='text-center text-nowrap'>Action</th>" : ""}
+      </tr>
+    </thead>
+    <tbody>
+      ${records.map((c) => {
+        const desktopActionButtons = (canManageCustomers || canManageCreditLimits) ? `
+          <div class="d-inline-flex gap-1 align-items-center justify-content-center">
+            ${canManageCreditLimits ? `<button type="button" class="btn btn-sm btn-action-compact btn-credit-limit" data-id="${c.ar_customer_id}" title="Credit Limit">Credit Limit</button>` : ""}
+            ${canManageCustomers ? `<button type="button" class="btn btn-sm btn-action-compact btn-update" data-id="${c.ar_customer_id}" title="Update Customer">Update</button>` : ""}
+            ${canManageCustomers && c.is_active == 1 ? `<button type="button" class="btn btn-sm btn-action-compact btn-delete" style="background-color: #dc3545 !important; color: #ffffff !important; border-color: #dc3545 !important;" data-id="${c.ar_customer_id}" title="Deactivate Customer">Deactivate</button>` : ""}
+            ${canManageCustomers && c.is_active != 1 ? `<button type="button" class="btn btn-sm btn-action-compact btn-restore" style="background-color: #198754 !important; color: #ffffff !important; border-color: #198754 !important;" data-id="${c.ar_customer_id}" title="Restore Customer">Restore</button>` : ""}
+          </div>` : "";
+
+        return `
+          <tr>
+            <td><span class="badge bg-light text-secondary font-monospace border">${c.ar_customer_id}</span></td>
+            <td>
+              <div class="fw-semibold text-truncate" style="max-width: 180px;" title="${c.customer_name}">${c.customer_name}</div>
+              ${c.contact_name ? `<small class="text-muted text-truncate d-block" style="max-width: 180px;">${c.contact_name}</small>` : ""}
+            </td>
+            <td><span class="badge bg-light text-dark border">${c.type_name || "General"}</span></td>
+            <td class="d-none d-lg-table-cell small">${c.contact_phone || "—"}</td>
+            <td class="d-none d-xl-table-cell small text-truncate" style="max-width: 200px;" title="${c.billing_address || ""}">${c.billing_address || "—"}</td>
+            <td class="text-end font-monospace">${Number(c.credit_limit || 0).toFixed(2)}</td>
+            <td class="text-end font-monospace text-danger">${Number(c.credit_exposure || 0).toFixed(2)}</td>
+            <td class="text-end font-monospace text-success">${Number(c.available_credit || 0).toFixed(2)}</td>
+            <td class="text-center">${c.is_active == 1 ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'}</td>
+            ${canManageCustomers || canManageCreditLimits ? `<td class="text-center text-nowrap">${desktopActionButtons}</td>` : ""}
+          </tr>
+        `;
+      }).join("")}
+    </tbody>
+  `;
+  desktopContainer.appendChild(table);
+
+  const sortBtn = desktopContainer.querySelector(".sortable-customer-id");
+  if (sortBtn) {
+    sortBtn.addEventListener("click", () => {
+      customerSortOrder = customerSortOrder === "desc" ? "asc" : "desc";
+      applySortAndRender();
+    });
+  }
+
+  tableDiv.appendChild(mobileContainer);
+  tableDiv.appendChild(desktopContainer);
+
+  // Wire action events for both mobile and desktop via data-id
+  tableDiv.querySelectorAll(".btn-credit-limit").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const c = records.find((r) => String(r.ar_customer_id) === btn.dataset.id);
+      if (c) updateCreditLimitModal(c);
+    });
+  });
+
+  tableDiv.querySelectorAll(".btn-update").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      updateModal(btn.dataset.id, arCustomerTypeList, displayRecords);
+    });
+  });
+
+  tableDiv.querySelectorAll(".btn-delete").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      deactivateModal(btn.dataset.id, displayRecords);
+    });
+  });
+
+  tableDiv.querySelectorAll(".btn-restore").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      restoreRecord(btn.dataset.id);
+    });
+  });
 };
 
 const updateCreditLimitModal = (customer) => {
@@ -172,9 +280,10 @@ const updateCreditLimitModal = (customer) => {
       if (data !== 1) throw new Error("The credit limit was not updated.");
       bootstrap.Modal.getOrCreateInstance(modalElement).hide();
       await displayRecords();
+      showToast("Credit limit updated successfully.");
     } catch (error) {
       console.error(error);
-      alert(error.response?.data?.message || error.message || "Unable to update the credit limit.");
+      showError(error.response?.data?.message || error.message || "Unable to update the credit limit.");
     }
   });
   bootstrap.Modal.getOrCreateInstance(modalElement).show();
@@ -192,18 +301,22 @@ const insertArCustomer = async () => {
   const formData = new FormData();
   formData.append("operation", "insertCustomer");
   formData.append("json", JSON.stringify(jsonData));
-  const response = await axios({
-    url: `${baseApiUrl}/ar_customer.php`,
-    method: "POST",
-    data: formData,
-  });
-  if (response.data == 1) {
-    displayRecords();
-    document.getElementById("add-form").reset();
-    bootstrap.Modal.getOrCreateInstance(document.getElementById("blank-modal")).hide();
-    alert("AR Customer successfully saved!");
-  } else {
-    alert("ERROR");
+  try {
+    const response = await axios({
+      url: `${baseApiUrl}/ar_customer.php`,
+      method: "POST",
+      data: formData,
+    });
+    if (response.data == 1) {
+      displayRecords();
+      document.getElementById("add-form").reset();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById("blank-modal")).hide();
+      showToast("AR Customer successfully saved!");
+    } else {
+      showError("Could not save customer.");
+    }
+  } catch (err) {
+    showError(err.response?.data?.message || "Failed to save customer.");
   }
 };
 
@@ -211,14 +324,19 @@ const restoreRecord = async (arCustomerId) => {
   const formData = new FormData();
   formData.append("operation", "restoreCustomer");
   formData.append("json", JSON.stringify({ arCustomerId: arCustomerId }));
-  const response = await axios({
-    url: `${baseApiUrl}/ar_customer.php`,
-    method: "POST",
-    data: formData,
-  });
-  if (response.data == 1) {
-    displayRecords();
-  } else {
-    alert("ERROR");
+  try {
+    const response = await axios({
+      url: `${baseApiUrl}/ar_customer.php`,
+      method: "POST",
+      data: formData,
+    });
+    if (response.data == 1) {
+      displayRecords();
+      showToast("AR Customer restored successfully.");
+    } else {
+      showError("Could not restore customer.");
+    }
+  } catch (err) {
+    showError("Failed to restore customer.");
   }
 };

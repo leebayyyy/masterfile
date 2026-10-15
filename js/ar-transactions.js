@@ -1,10 +1,10 @@
-const arUrl = new URL("../api/ar_transactions.php", import.meta.url).href;
+import { showToast, showError, showSuccess } from "./swal-helper.js";
+
+const arUrl = "/api/ar_transactions.php";
 let arData;
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("memo-form").addEventListener("submit", saveMemo);
-  document.getElementById("invoice-form").addEventListener("submit", saveInvoice);
-  document.getElementById("invoice-date").addEventListener("change", updateDueDate);
   loadAr();
 });
 
@@ -25,7 +25,6 @@ const loadAr = async () => {
 
 const renderAr = () => {
   const invoices = arData.invoices || [];
-  const sales = arData.sales || [];
   const memos = arData.memos || [];
   document.getElementById("btn-new-memo").classList.toggle("d-none", !arData.canManageAr);
   document.getElementById("invoices").innerHTML = `
@@ -48,17 +47,6 @@ const renderAr = () => {
                 : '<span class="badge bg-primary">Current</span>'}</td>
         <td>${Number(invoice.days_overdue || 0) > 0 ? invoice.days_overdue : ""}</td></tr>`).join("") || '<tr><td colspan="9">No invoices recorded.</td></tr>'}
       </tbody>
-    </table></div>
-    <h4 class="mt-4">Credit Sales Awaiting Invoicing</h4>
-    <div class="table-responsive"><table class="table table-sm">
-      <thead><tr><th>Sale</th><th>Customer</th><th>Sale Date</th><th>Total</th><th></th></tr></thead>
-      <tbody>${sales.map((sale) => `
-        <tr><td>#${sale.sale_id}</td><td>${sale.customer_name}</td><td>${sale.sale_date}</td>
-        <td>${Number(sale.invoice_amount).toFixed(2)}</td>
-        <td>${arData.canManageAr
-          ? `<button class="btn btn-sm btn-primary" data-create-invoice="${sale.sale_id}">Create Invoice</button>`
-          : "Awaiting AR Staff"}</td></tr>`).join("") || '<tr><td colspan="5">No credit sales awaiting invoicing.</td></tr>'}
-      </tbody>
     </table></div>`;
 
   document.getElementById("memos").innerHTML = `
@@ -78,58 +66,6 @@ const renderAr = () => {
     invoices.filter((invoice) => Number(invoice.balance) > 0)
       .map((invoice) => `<option value="${invoice.ar_invoice_id}">${invoice.invoice_number} - ${invoice.customer_name}</option>`)
       .join("");
-  document.querySelectorAll("[data-create-invoice]").forEach((button) => {
-    button.addEventListener("click", () => openInvoiceForm(button.dataset.createInvoice));
-  });
-};
-
-const openInvoiceForm = (saleId) => {
-  const sale = arData.sales.find((record) => String(record.sale_id) === String(saleId));
-  if (!sale) return;
-
-  const today = new Date();
-  const invoiceDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  document.getElementById("invoice-sale-id").value = sale.sale_id;
-  document.getElementById("invoice-pending-id").value = sale.pending_invoice_id || "";
-  document.getElementById("invoice-sale-summary").textContent =
-    `Sale #${sale.sale_id} for ${sale.customer_name} (${sale.sale_date}).`;
-  document.getElementById("invoice-date").value = invoiceDate;
-  document.getElementById("invoice-amount").value = Number(sale.invoice_amount).toFixed(2);
-  document.getElementById("invoice-balance").value = Number(sale.invoice_amount).toFixed(2);
-  updateDueDate();
-  bootstrap.Modal.getOrCreateInstance(document.getElementById("invoice-modal")).show();
-};
-
-const updateDueDate = () => {
-  const invoiceDate = document.getElementById("invoice-date").value;
-  const saleId = document.getElementById("invoice-sale-id").value;
-  const sale = arData.sales.find((record) => String(record.sale_id) === saleId);
-  if (!invoiceDate || !sale) return;
-  const dueDate = new Date(`${invoiceDate}T00:00:00`);
-  dueDate.setDate(dueDate.getDate() + Number(sale.payment_terms_days || 0));
-  document.getElementById("invoice-due-date").value =
-    `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}-${String(dueDate.getDate()).padStart(2, "0")}`;
-};
-
-const saveInvoice = async (event) => {
-  event.preventDefault();
-  const formData = new FormData();
-  formData.append("operation", "createInvoice");
-  formData.append("json", JSON.stringify({
-    saleId: document.getElementById("invoice-sale-id").value,
-    invoiceDate: document.getElementById("invoice-date").value,
-    dueDate: document.getElementById("invoice-due-date").value,
-    invoiceAmount: document.getElementById("invoice-amount").value,
-    balance: document.getElementById("invoice-balance").value,
-  }));
-  try {
-    const response = await axios.post(arUrl, formData, { withCredentials: true });
-    bootstrap.Modal.getOrCreateInstance(document.getElementById("invoice-modal")).hide();
-    await loadAr();
-    alert(`Invoice ${response.data.invoiceNumber} created.`);
-  } catch (error) {
-    alert(error.response?.data?.message || "Unable to create invoice.");
-  }
 };
 
 const saveMemo = async (event) => {
@@ -147,8 +83,8 @@ const saveMemo = async (event) => {
     event.target.reset();
     await loadAr();
     const memoLabel = response.data.memoType === "Credit" ? "Credit memo" : "Debit memo";
-    alert(`${memoLabel} recorded. Updated invoice amount: ${Number(response.data.invoiceAmount).toFixed(2)}; remaining balance: ${Number(response.data.remainingBalance).toFixed(2)}; status: ${response.data.invoiceStatus}.`);
+    showToast(`${memoLabel} recorded. Updated balance: ${Number(response.data.remainingBalance).toFixed(2)}`);
   } catch (error) {
-    alert(error.response?.data?.message || "Unable to save memo.");
+    showError(error.response?.data?.message || "Unable to save memo.");
   }
 };

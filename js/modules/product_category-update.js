@@ -1,3 +1,5 @@
+import { showToast, showError } from "../swal-helper.js";
+
 export const updateModal = async (categoryId, refreshDisplay) => {
   const myModal = new bootstrap.Modal(document.getElementById("blank-modal"), {
     keyboard: true,
@@ -31,10 +33,10 @@ export const updateModal = async (categoryId, refreshDisplay) => {
   modalFooter.querySelector(".btn-update").addEventListener("click", async () => {
     if (await updateProductCategory(categoryId) == 1) {
       refreshDisplay();
-      alert("Product Category record has been successfully updated!");
+      showToast("Product Category record has been successfully updated!", "success");
       myModal.hide();
     } else {
-      alert("ERROR!");
+      showError("Failed to update product category.");
     }
   });
 

@@ -127,6 +127,22 @@
       if (!$this->validEmployeeFields($json, true)) {
         return "";
       }
+      $checkStmt = $conn->prepare("SELECT 1 FROM tblusers WHERE LOWER(username) = LOWER(:username)");
+      $checkStmt->execute([":username" => $json['username']]);
+      if ($checkStmt->fetchColumn()) {
+        http_response_code(422);
+        echo json_encode(["message" => "Username is already taken."]);
+        return "";
+      }
+      if (!empty($json['email'])) {
+        $checkEmail = $conn->prepare("SELECT 1 FROM tblusers WHERE LOWER(email) = LOWER(:email)");
+        $checkEmail->execute([":email" => $json['email']]);
+        if ($checkEmail->fetchColumn()) {
+          http_response_code(422);
+          echo json_encode(["message" => "Email address is already in use."]);
+          return "";
+        }
+      }
       $sql = "INSERT INTO tblusers(username, first_name, last_name, role_id, email, phone, password_hash, is_active)
               VALUES(:username, :firstName, :lastName, :roleId, :email, :phone, :passwordHash, 1)";
       $stmt = $conn->prepare($sql);
@@ -166,6 +182,22 @@
       }
       if (!$this->validEmployeeFields($json, false, $currentRoleId)) {
         return "";
+      }
+      $checkStmt = $conn->prepare("SELECT 1 FROM tblusers WHERE LOWER(username) = LOWER(:username) AND user_id <> :userId");
+      $checkStmt->execute([":username" => $json['username'], ":userId" => $userId]);
+      if ($checkStmt->fetchColumn()) {
+        http_response_code(422);
+        echo json_encode(["message" => "Username is already taken."]);
+        return "";
+      }
+      if (!empty($json['email'])) {
+        $checkEmail = $conn->prepare("SELECT 1 FROM tblusers WHERE LOWER(email) = LOWER(:email) AND user_id <> :userId");
+        $checkEmail->execute([":email" => $json['email'], ":userId" => $userId]);
+        if ($checkEmail->fetchColumn()) {
+          http_response_code(422);
+          echo json_encode(["message" => "Email address is already in use."]);
+          return "";
+        }
       }
       $roleId = filter_var($json['roleId'], FILTER_VALIDATE_INT);
       if ((int)$currentUser['user_id'] === $userId && (int)$currentRoleId !== $roleId) {

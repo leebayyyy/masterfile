@@ -1,0 +1,8 @@
+.git
+.agents
+.cursor
+.vscode
+node_modules
+*.log
+.env
+.env.*

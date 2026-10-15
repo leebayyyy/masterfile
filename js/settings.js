@@ -1,4 +1,4 @@
-const settingsUrl = new URL("../api/settings.php", import.meta.url).href;
+const settingsUrl = "/api/settings.php";
 let settingsData;
 
 document.addEventListener("DOMContentLoaded", () => {

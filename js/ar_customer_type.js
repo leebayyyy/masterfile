@@ -1,7 +1,8 @@
 import { updateModal } from "./modules/ar_customer_type-update.js";
 import { deleteModal } from "./modules/ar_customer_type-delete.js";
+import { showToast, showError } from "./swal-helper.js";
 
-const baseApiUrl = new URL("../api", import.meta.url).href;
+const baseApiUrl = "/api";
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 let canManageCustomerTypes = false;
@@ -45,9 +46,11 @@ const displayRecords = async () => {
   if (response.status == 200) {
     displayRecordsTable(response.data);
   } else {
-    alert("Error!");
+    showError("Unable to load customer types.");
   }
 };
+
+let customerTypeSortDirection = "desc";
 
 const displayRecordsTable = (records) => {
   const tableDiv = document.getElementById("table-div");
@@ -55,9 +58,18 @@ const displayRecordsTable = (records) => {
   const table = document.createElement("table");
   table.classList.add("table", "table-hover", "table-striped", "table-sm");
 
+  const sorted = [...records].sort((a, b) => {
+    const idA = Number(a.customer_type_id || 0);
+    const idB = Number(b.customer_type_id || 0);
+    return customerTypeSortDirection === "desc" ? idB - idA : idA - idB;
+  });
+
   const thead = document.createElement("thead");
   thead.innerHTML = `
       <tr>
+        <th id="th-customer-type-id" style="cursor: pointer; user-select: none;" title="Click to sort by Customer Type ID">
+          TYPE ID <span class="sort-icon">${customerTypeSortDirection === "desc" ? "▼" : "▲"}</span>
+        </th>
         <th>TYPE NAME</th>
         <th>DESCRIPTION</th>
         <th>DAYS</th>
@@ -67,9 +79,10 @@ const displayRecordsTable = (records) => {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  records.forEach((customerType) => {
+  sorted.forEach((customerType) => {
     let row = document.createElement("tr");
     row.innerHTML = `
+        <td class="font-monospace fw-bold">#${customerType.customer_type_id}</td>
         <td>${customerType.type_name}</td>
         <td>${customerType.description}</td>
         <td>${customerType.days ?? ""}</td>
@@ -92,6 +105,11 @@ const displayRecordsTable = (records) => {
   });
   table.appendChild(tbody);
   tableDiv.appendChild(table);
+
+  document.getElementById("th-customer-type-id")?.addEventListener("click", () => {
+    customerTypeSortDirection = customerTypeSortDirection === "desc" ? "asc" : "desc";
+    displayRecordsTable(records);
+  });
 };
 
 const insertArCustomerType = async () => {
@@ -112,8 +130,8 @@ const insertArCustomerType = async () => {
     displayRecords();
     document.getElementById("add-form").reset();
     bootstrap.Modal.getOrCreateInstance(document.getElementById("blank-modal")).hide();
-    alert("Customer Type successfully saved!");
+    showToast("Customer Type successfully saved!", "success");
   } else {
-    alert("ERROR");
+    showError("Failed to save customer type.");
   }
 };

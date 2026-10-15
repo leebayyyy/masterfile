@@ -37,10 +37,13 @@
               VALUES(:productId, :wholesalePrice, :priceTier, :effectiveFrom, :effectiveTo)";
       $stmt = $conn->prepare($sql);
       $stmt->bindParam(":productId", $json['productId']);
-      $stmt->bindParam(":wholesalePrice", $json['wholesalePrice']);
+      $wholesalePrice = ($json['wholesalePrice'] ?? '') === '' ? null : $json['wholesalePrice'];
+      $effectiveFrom = ($json['effectiveFrom'] ?? '') === '' ? null : $json['effectiveFrom'];
+      $effectiveTo = ($json['effectiveTo'] ?? '') === '' ? null : $json['effectiveTo'];
+      $stmt->bindParam(":wholesalePrice", $wholesalePrice);
       $stmt->bindParam(":priceTier", $json['priceTier']);
-      $stmt->bindParam(":effectiveFrom", $json['effectiveFrom']);
-      $stmt->bindParam(":effectiveTo", $json['effectiveTo']);
+      $stmt->bindParam(":effectiveFrom", $effectiveFrom);
+      $stmt->bindParam(":effectiveTo", $effectiveTo);
       $stmt->execute();
       $returnValue = 0;
       if($stmt->rowCount() > 0){
@@ -57,10 +60,13 @@
               WHERE wholesale_price_id=:wholesalePriceId";
       $stmt = $conn->prepare($sql);
       $stmt->bindParam(":productId", $json['productId']);
-      $stmt->bindParam(":wholesalePrice", $json['wholesalePrice']);
+      $wholesalePrice = ($json['wholesalePrice'] ?? '') === '' ? null : $json['wholesalePrice'];
+      $effectiveFrom = ($json['effectiveFrom'] ?? '') === '' ? null : $json['effectiveFrom'];
+      $effectiveTo = ($json['effectiveTo'] ?? '') === '' ? null : $json['effectiveTo'];
+      $stmt->bindParam(":wholesalePrice", $wholesalePrice);
       $stmt->bindParam(":priceTier", $json['priceTier']);
-      $stmt->bindParam(":effectiveFrom", $json['effectiveFrom']);
-      $stmt->bindParam(":effectiveTo", $json['effectiveTo']);
+      $stmt->bindParam(":effectiveFrom", $effectiveFrom);
+      $stmt->bindParam(":effectiveTo", $effectiveTo);
       $stmt->bindParam(":wholesalePriceId", $json['wholesalePriceId']);
       $stmt->execute();
       $returnValue = $stmt->rowCount() > 0 ? 1 : 0;

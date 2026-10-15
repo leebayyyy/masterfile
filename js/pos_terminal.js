@@ -2,7 +2,7 @@ import { updateModal } from "./modules/pos_terminal-update.js?v=3";
 import { deleteModal } from "./modules/pos_terminal-delete.js?v=3";
 import { getSession } from "./auth.js?v=3";
 
-const baseApiUrl = new URL("../api", import.meta.url).href;
+const baseApiUrl = "/api";
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 let canManageTerminals = false;
@@ -51,24 +51,50 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character
   "'": "&#39;",
 }[character]));
 
+let terminalSortDirection = "desc";
+
 const displayRecords = async () => {
   const response = await axios.get(`${baseApiUrl}/pos_terminal.php`, {
     params: { operation: "getAllPosTerminals" },
     withCredentials: true,
   });
   const tableDiv = document.getElementById("table-div");
-  const records = response.data;
-  tableDiv.innerHTML = records.length
-    ? `<table class="table table-hover table-striped table-sm">
-        <thead><tr><th>TERMINAL NAME</th>${canManageTerminals ? "<th>ACTION</th>" : ""}</tr></thead>
-        <tbody>${records.map((terminal) => `
-          <tr><td>${escapeHtml(terminal.terminal_name)}</td>
-          ${canManageTerminals ? `<td>
-            <button type="button" class="btn btn-success btn-sm btn-update" data-id="${terminal.pos_terminal_id}">Update</button>
-            <button type="button" class="btn btn-danger btn-sm btn-delete" data-id="${terminal.pos_terminal_id}">Delete</button>
-          </td>` : ""}</tr>`).join("")}</tbody>
+  const records = response.data || [];
+
+  const sorted = [...records].sort((a, b) => {
+    const idA = Number(a.pos_terminal_id || 0);
+    const idB = Number(b.pos_terminal_id || 0);
+    return terminalSortDirection === "desc" ? idB - idA : idA - idB;
+  });
+
+  tableDiv.innerHTML = sorted.length
+    ? `<table class="table table-hover table-striped table-sm align-middle">
+        <thead>
+          <tr>
+            <th id="th-terminal-id" style="cursor: pointer; user-select: none;" title="Click to sort by Terminal ID">
+              TERMINAL ID <span class="sort-icon">${terminalSortDirection === "desc" ? "▼" : "▲"}</span>
+            </th>
+            <th>TERMINAL NAME</th>
+            ${canManageTerminals ? "<th>ACTION</th>" : ""}
+          </tr>
+        </thead>
+        <tbody>${sorted.map((terminal) => `
+          <tr>
+            <td class="font-monospace fw-bold">#${terminal.pos_terminal_id}</td>
+            <td>${escapeHtml(terminal.terminal_name)}</td>
+            ${canManageTerminals ? `<td>
+              <button type="button" class="btn btn-success btn-sm btn-update" data-id="${terminal.pos_terminal_id}">Update</button>
+              <button type="button" class="btn btn-danger btn-sm btn-delete" data-id="${terminal.pos_terminal_id}">Delete</button>
+            </td>` : ""}
+          </tr>`).join("")}
+        </tbody>
       </table>`
     : '<p class="text-muted">No POS terminals configured.</p>';
+
+  document.getElementById("th-terminal-id")?.addEventListener("click", () => {
+    terminalSortDirection = terminalSortDirection === "desc" ? "asc" : "desc";
+    displayRecords();
+  });
 
   if (canManageTerminals) {
     tableDiv.querySelectorAll(".btn-update").forEach((button) =>
