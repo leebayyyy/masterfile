@@ -4,11 +4,11 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://YOUR-RENDER-SERVICE.onrender.com/api/$1"
+      "destination": "https://pos-api.clevai.dev/api/$1"
     },
     {
       "source": "/api",
-      "destination": "https://YOUR-RENDER-SERVICE.onrender.com/api/"
+      "destination": "https://pos-api.clevai.dev/api/"
     }
   ]
 }
