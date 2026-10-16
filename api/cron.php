@@ -13,13 +13,17 @@ if (empty($cronSecret)) {
   exit;
 }
 
-// Extract token from Authorization: Bearer header or ?key= query parameter
+// Extract token from Authorization: Bearer header, X-Cron-Secret header,
+// or (legacy) ?key= query parameter
 $token = null;
 $headers = function_exists('getallheaders') ? getallheaders() : [];
-$authHeader = $headers['Authorization'] ?? ($headers['authorization'] ?? ($_SERVER['HTTP_AUTHORIZATION'] ?? ''));
+$authHeader = $headers['Authorization'] ?? ($headers['authorization'] ?? ($_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '')));
+$secretHeader = $_SERVER['HTTP_X_CRON_SECRET'] ?? '';
 
 if (preg_match('/Bearer\s+(\S+)/i', $authHeader, $matches)) {
   $token = $matches[1];
+} elseif (is_string($secretHeader) && trim($secretHeader) !== '') {
+  $token = trim($secretHeader);
 } elseif (isset($_GET['key']) && is_string($_GET['key'])) {
   $token = $_GET['key'];
 }
@@ -36,6 +40,16 @@ if (!$token || !hash_equals($cronSecret, $token)) {
 
 try {
   include "connection-pdo.php";
+
+  // Prevent overlapping runs: transaction-scoped advisory lock (auto-released
+  // on commit/rollback, safe with pooled connections).
+  $conn->beginTransaction();
+  $lockStmt = $conn->query("SELECT pg_try_advisory_xact_lock(727001)");
+  if (!filter_var($lockStmt->fetchColumn(), FILTER_VALIDATE_BOOLEAN)) {
+    $conn->rollBack();
+    echo json_encode(["success" => true, "skipped" => true, "reason" => "Another cron run is in progress."]);
+    exit;
+  }
 
   // 1. Mark overdue AR invoices:
   // Approved invoices with balance > 0 and due_date strictly earlier than current date
@@ -61,6 +75,7 @@ try {
   $updatedPaid = $stmtPaid->rowCount();
 
   $totalUpdated = $updatedOverdue + $updatedPaid;
+  $conn->commit();
 
   echo json_encode([
     "success" => true,
@@ -72,6 +87,9 @@ try {
     ]
   ]);
 } catch (Throwable $e) {
+  if (isset($conn) && $conn instanceof PDO && $conn->inTransaction()) {
+    $conn->rollBack();
+  }
   // Safe failure output: no leaked credentials or stack traces
   http_response_code(500);
   echo json_encode([
