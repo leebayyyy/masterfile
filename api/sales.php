@@ -147,6 +147,9 @@ function getReceipt($saleId) {
 
 function createSale($json) {
   include "connection-pdo.php";
+  // Client-side prepares: no server-side PREPARE/DEALLOCATE inside the transaction.
+  // A failed DEALLOCATE (e.g. behind a connection pooler) aborts the whole tx -> SQLSTATE 25P02.
+  $conn->setAttribute(PDO::ATTR_EMULATE_PREPARES, true);
   $data = json_decode($json, true);
   if (!is_array($data)) {
     http_response_code(422);
@@ -284,9 +287,9 @@ function createSale($json) {
       $creditLimit = (float)$customer['credit_limit'];
 
       $step = 'suki_card_lock';
-      $cardStmt = $conn->prepare("SELECT s.sku_card_id, s.points_balance FROM tblsku_card s WHERE s.ar_customer_id=:customerId AND s.is_active=1 AND (s.expiry_date IS NULL OR s.expiry_date >= CURRENT_DATE) ORDER BY s.issued_date DESC, s.sku_card_id DESC FOR UPDATE");
-      $cardStmt->execute([":customerId"=>$customerId]);
-      $customerCards = $cardStmt->fetchAll(PDO::FETCH_ASSOC);
+      $arCardStmt = $conn->prepare("SELECT s.sku_card_id, s.points_balance FROM tblsku_card s WHERE s.ar_customer_id=:customerId AND s.is_active=1 AND (s.expiry_date IS NULL OR s.expiry_date >= CURRENT_DATE) ORDER BY s.issued_date DESC, s.sku_card_id DESC FOR UPDATE");
+      $arCardStmt->execute([":customerId"=>$customerId]);
+      $customerCards = $arCardStmt->fetchAll(PDO::FETCH_ASSOC);
       if (count($customerCards) > 1) {
         throw new RuntimeException("Multiple active SUKI cards are linked to this customer. Ask AR Staff to resolve this before completing the sale.");
       }
@@ -300,23 +303,23 @@ function createSale($json) {
     // --- product_lookup ---
     $subtotal = 0;
     $detailRows = [];
+    $productStmt = $conn->prepare(
+      "SELECT p.price, COALESCE(pr.discount_rate, 0) AS promo_rate, pr.promo_id, pr.promo_name
+       FROM tblproducts p
+       LEFT JOIN tblpromo pr ON pr.promo_id=(
+         SELECT pr2.promo_id
+         FROM tblproduct_promo pp2
+         INNER JOIN tblpromo pr2 ON pr2.promo_id=pp2.promo_id
+         WHERE pp2.product_id=p.product_id AND pr2.is_active=1
+           AND (pr2.start_date IS NULL OR pr2.start_date <= CURRENT_DATE)
+           AND (pr2.end_date IS NULL OR pr2.end_date >= CURRENT_DATE)
+         ORDER BY pr2.discount_rate DESC, pr2.promo_id DESC
+         LIMIT 1
+       )
+       WHERE p.product_id=:productId AND p.is_active=1"
+    );
     foreach ($items as $idx => $item) {
       $step = 'product_lookup[' . $idx . ']';
-      $productStmt = $conn->prepare(
-        "SELECT p.price, COALESCE(pr.discount_rate, 0) AS promo_rate, pr.promo_id, pr.promo_name
-         FROM tblproducts p
-         LEFT JOIN tblpromo pr ON pr.promo_id=(
-           SELECT pr2.promo_id
-           FROM tblproduct_promo pp2
-           INNER JOIN tblpromo pr2 ON pr2.promo_id=pp2.promo_id
-           WHERE pp2.product_id=p.product_id AND pr2.is_active=1
-             AND (pr2.start_date IS NULL OR pr2.start_date <= CURRENT_DATE)
-             AND (pr2.end_date IS NULL OR pr2.end_date >= CURRENT_DATE)
-           ORDER BY pr2.discount_rate DESC, pr2.promo_id DESC
-           LIMIT 1
-         )
-         WHERE p.product_id=:productId AND p.is_active=1"
-      );
       $productStmt->execute([":productId" => $item['productId']]);
       $product = $productStmt->fetch(PDO::FETCH_ASSOC);
       if (!$product) {
@@ -442,6 +445,7 @@ function createSale($json) {
       "newSukiPointsBalance" => $sukiPointsBalance
     ]);
   } catch (Throwable $e) {
+    error_log("createSale failed at step '{$step}': " . $e->getMessage());
     if ($conn->inTransaction()) $conn->rollBack();
     http_response_code(422);
     // TODO: REMOVE DEBUG FIELDS AFTER FIX — start
