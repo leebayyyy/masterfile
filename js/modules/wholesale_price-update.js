@@ -1,3 +1,5 @@
+import { showToast, showError } from "../swal-helper.js";
+
 export const updateModal = async (wholesalePriceId, productList, refreshDisplay) => {
   const myModal = new bootstrap.Modal(document.getElementById("blank-modal"), {
     keyboard: true,
@@ -49,10 +51,10 @@ export const updateModal = async (wholesalePriceId, productList, refreshDisplay)
   modalFooter.querySelector(".btn-update").addEventListener("click", async () => {
     if (await updateWholesalePrice(wholesalePriceId) == 1) {
       refreshDisplay();
-      alert("Wholesale Price record has been successfully updated!");
+      showToast("Wholesale Price record has been successfully updated!", "success");
       myModal.hide();
     } else {
-      alert("ERROR!");
+      showError("Failed to update wholesale price.");
     }
   });
 

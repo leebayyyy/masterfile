@@ -1,7 +1,8 @@
 import { updateModal } from "./modules/user-update.js";
 import { deactivateModal } from "./modules/user-delete.js";
+import { showToast, showError as showSwalError } from "./swal-helper.js";
 
-const baseApiUrl = new URL("../api", import.meta.url).href;
+const baseApiUrl = "/api";
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 let roleList = [];
@@ -77,15 +78,26 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character
   "'": "&#39;",
 }[character]));
 
+let userSortDirection = "desc";
+
 const displayRecordsTable = (records) => {
   const tableDiv = document.getElementById("table-div");
   tableDiv.innerHTML = "";
   const table = document.createElement("table");
   table.classList.add("table", "table-hover", "table-striped", "table-sm");
 
+  const sorted = [...records].sort((a, b) => {
+    const idA = Number(a.user_id || 0);
+    const idB = Number(b.user_id || 0);
+    return userSortDirection === "desc" ? idB - idA : idA - idB;
+  });
+
   const thead = document.createElement("thead");
   thead.innerHTML = `
       <tr>
+        <th id="th-user-id" style="cursor: pointer; user-select: none;" title="Click to sort by User ID">
+          USER ID <span class="sort-icon">${userSortDirection === "desc" ? "▼" : "▲"}</span>
+        </th>
         <th>USERNAME</th>
         <th>FIRST NAME</th>
         <th>LAST NAME</th>
@@ -99,9 +111,10 @@ const displayRecordsTable = (records) => {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  records.forEach((user) => {
+  sorted.forEach((user) => {
     let row = document.createElement("tr");
     row.innerHTML = `
+        <td class="font-monospace fw-bold">#${user.user_id}</td>
         <td>${escapeHtml(user.username)}</td>
         <td>${escapeHtml(user.first_name)}</td>
         <td>${escapeHtml(user.last_name)}</td>
@@ -134,6 +147,11 @@ const displayRecordsTable = (records) => {
   });
   table.appendChild(tbody);
   tableDiv.appendChild(table);
+
+  document.getElementById("th-user-id")?.addEventListener("click", () => {
+    userSortDirection = userSortDirection === "desc" ? "asc" : "desc";
+    displayRecordsTable(records);
+  });
 };
 
 const insertUser = async () => {
@@ -162,7 +180,7 @@ const insertUser = async () => {
       await displayRecords();
       document.getElementById("add-form").reset();
       bootstrap.Modal.getOrCreateInstance(document.getElementById("blank-modal")).hide();
-      alert("Employee account successfully created.");
+      showToast("Employee account successfully created.", "success");
     } else {
       throw new Error("Employee account was not created.");
     }

@@ -6,12 +6,15 @@ header('Access-Control-Allow-Origin: *');
 function getFormData($user) {
   include "connection-pdo.php";
   $selectedTerminal = null;
-  if ($user['role_name'] === 'Cashier' && !empty($_SESSION['pos_terminal_id'])) {
+  if (!empty($_SESSION['pos_terminal_id'])) {
     $terminalStmt = $conn->prepare(
       "SELECT pos_terminal_id, terminal_name FROM tblpos_terminals WHERE pos_terminal_id=:terminalId"
     );
     $terminalStmt->execute([":terminalId"=>$_SESSION['pos_terminal_id']]);
     $selectedTerminal = $terminalStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+  }
+  if (!$selectedTerminal && in_array($user['role_name'], ['Admin', 'Manager'], true)) {
+    $selectedTerminal = $conn->query("SELECT pos_terminal_id, terminal_name FROM tblpos_terminals ORDER BY pos_terminal_id ASC LIMIT 1")->fetch(PDO::FETCH_ASSOC) ?: null;
   }
   return json_encode([
     "products" => $conn->query(
@@ -23,8 +26,8 @@ function getFormData($user) {
          FROM tblproduct_promo pp2
          INNER JOIN tblpromo pr2 ON pr2.promo_id=pp2.promo_id
          WHERE pp2.product_id=p.product_id AND pr2.is_active=1
-           AND (pr2.start_date IS NULL OR pr2.start_date <= CURDATE())
-           AND (pr2.end_date IS NULL OR pr2.end_date >= CURDATE())
+           AND (pr2.start_date IS NULL OR pr2.start_date <= CURRENT_DATE)
+           AND (pr2.end_date IS NULL OR pr2.end_date >= CURRENT_DATE)
          ORDER BY pr2.discount_rate DESC, pr2.promo_id DESC
          LIMIT 1
        )
@@ -58,10 +61,10 @@ function getFormData($user) {
       "SELECT s.sku_card_id, s.ar_customer_id, s.card_number, s.points_balance
        FROM tblsku_card s
        INNER JOIN tblar_customers c ON c.ar_customer_id=s.ar_customer_id AND c.is_active=1
-       WHERE s.is_active=1 AND (s.expiry_date IS NULL OR s.expiry_date >= CURDATE())
+       WHERE s.is_active=1 AND (s.expiry_date IS NULL OR s.expiry_date >= CURRENT_DATE)
        ORDER BY s.ar_customer_id, s.issued_date DESC, s.sku_card_id DESC"
     )->fetchAll(PDO::FETCH_ASSOC),
-    "promotions" => $conn->query("SELECT promo_id, promo_name, discount_rate FROM tblpromo WHERE is_active=1 AND (start_date IS NULL OR start_date <= CURDATE()) AND (end_date IS NULL OR end_date >= CURDATE()) ORDER BY promo_name")->fetchAll(PDO::FETCH_ASSOC)
+    "promotions" => $conn->query("SELECT promo_id, promo_name, discount_rate FROM tblpromo WHERE is_active=1 AND (start_date IS NULL OR start_date <= CURRENT_DATE) AND (end_date IS NULL OR end_date >= CURRENT_DATE) ORDER BY promo_name")->fetchAll(PDO::FETCH_ASSOC)
   ]);
 }
 
@@ -104,7 +107,7 @@ function getAllSales() {
   $sql = "SELECT s.sale_id, s.sale_date, s.sale_type, s.price, s.tax_total, s.total_amount, s.balance,
                  m.method_name AS payment_method,
                  COALESCE((SELECT SUM(sd.promo_discount) FROM tblsales_detail sd WHERE sd.sale_id=s.sale_id), 0) AS promotion_discount,
-                 (SELECT GROUP_CONCAT(DISTINCT pr.promo_name ORDER BY pr.promo_name SEPARATOR ', ')
+                 (SELECT STRING_AGG(DISTINCT pr.promo_name, ', ' ORDER BY pr.promo_name)
                   FROM tblsales_detail sd INNER JOIN tblpromo pr ON pr.promo_id=sd.promo_id
                   WHERE sd.sale_id=s.sale_id) AS promotions_applied,
                  c.customer_name,
@@ -171,7 +174,21 @@ function createSale($json) {
   }
   $user = requireLogin();
   $data['cashierUserId'] = $user['user_id'];
+  if ($user['role_name'] === 'Cashier') {
+    foreach ($items as $item) {
+      if (!empty($item['discount']) && (float)$item['discount'] > 0) {
+        http_response_code(403);
+        return json_encode(["returnValue" => 0, "message" => "Cashiers are not permitted to create or modify custom discounts."]);
+      }
+    }
+  }
   $terminalId = filter_var($_SESSION['pos_terminal_id'] ?? null, FILTER_VALIDATE_INT);
+  if (!$terminalId || $terminalId < 1) {
+    if (in_array($user['role_name'], ['Admin', 'Manager'], true)) {
+      $defaultTerminalStmt = $conn->query("SELECT pos_terminal_id FROM tblpos_terminals ORDER BY pos_terminal_id ASC LIMIT 1");
+      $terminalId = $defaultTerminalStmt ? (int)$defaultTerminalStmt->fetchColumn() : null;
+    }
+  }
   if (!$terminalId || $terminalId < 1) {
     http_response_code(422);
     return json_encode(["returnValue"=>0, "message"=>"Choose a POS terminal after signing in before recording a sale."]);
@@ -187,14 +204,8 @@ function createSale($json) {
       return json_encode(["returnValue" => 0, "message" => "Select Has or None for the SUKI card."]);
     }
     $sukiStatus = $requestedSukiStatus;
-    if ($sukiStatus === 'Has') {
-      $points = $data['sukiPointsBalance'] ?? null;
-      if (!is_numeric($points) || (float)$points < 0 || floor((float)$points) !== (float)$points || (float)$points > 99999999.99) {
-        http_response_code(422);
-        return json_encode(["returnValue" => 0, "message" => "Enter a valid whole-number SUKI point balance."]);
-      }
-      $sukiPointsBalance = (int)$points;
-    }
+    // Task 2: Points are computed and written ONLY by the server; ignore any client-submitted points_balance
+    $sukiPointsBalance = 0;
   }
   if ($isAr && empty($data['customerId'])) {
     http_response_code(422);
@@ -210,9 +221,14 @@ function createSale($json) {
     http_response_code(422);
     return json_encode(["returnValue" => 0, "message" => "A registered SUKI card can only be selected when the customer has a card."]);
   }
+
+  $step = 'begin'; // Step marker for debug instrumentation
   try {
     $conn->beginTransaction();
+
+    // --- payment_method_lock ---
     if (!$isAr) {
+      $step = 'payment_method_lock';
       $methodStmt = $conn->prepare(
         "SELECT payment_method_id FROM tblpayment_method
          WHERE payment_method_id=:methodId AND is_active=1 FOR UPDATE"
@@ -222,6 +238,9 @@ function createSale($json) {
         throw new RuntimeException("Select a valid active payment method.");
       }
     }
+
+    // --- terminal_lock ---
+    $step = 'terminal_lock';
     $terminalStmt = $conn->prepare(
       "SELECT pos_terminal_id FROM tblpos_terminals WHERE pos_terminal_id=:terminalId FOR UPDATE"
     );
@@ -231,13 +250,16 @@ function createSale($json) {
     if (!$terminalStmt->fetchColumn()) {
       throw new RuntimeException("You are not assigned to the selected POS terminal.");
     }
+
+    // --- suki_card_lock ---
     if (!$isAr && $sukiStatus === 'Has' && $requestedSukiCardId) {
+      $step = 'suki_card_lock';
       $cardStmt = $conn->prepare(
-        "SELECT sku_card_id, ar_customer_id
+        "SELECT s.sku_card_id, s.ar_customer_id, s.points_balance
          FROM tblsku_card s
          INNER JOIN tblar_customers c ON c.ar_customer_id=s.ar_customer_id AND c.is_active=1
          WHERE s.sku_card_id=:cardId AND s.is_active=1
-           AND (s.expiry_date IS NULL OR s.expiry_date >= CURDATE())
+           AND (s.expiry_date IS NULL OR s.expiry_date >= CURRENT_DATE)
          FOR UPDATE"
       );
       $cardStmt->execute([":cardId"=>$requestedSukiCardId]);
@@ -245,10 +267,14 @@ function createSale($json) {
       if (!$card) {
         throw new RuntimeException("The selected SUKI card is no longer active.");
       }
-      $sukiCardId = $card['sku_card_id'];
+      $sukiCardId = (int)$card['sku_card_id'];
       $customerId = (int)$card['ar_customer_id'];
+      $sukiPointsBalance = (float)($card['points_balance'] ?? 0);
     }
+
+    // --- customer_lock ---
     if ($isAr) {
+      $step = 'customer_lock';
       $customerStmt = $conn->prepare("SELECT ar_customer_id, credit_limit FROM tblar_customers WHERE ar_customer_id=:customerId AND is_active=1 FOR UPDATE");
       $customerStmt->execute([":customerId"=>$customerId]);
       $customer = $customerStmt->fetch(PDO::FETCH_ASSOC);
@@ -256,21 +282,26 @@ function createSale($json) {
         throw new RuntimeException("The selected AR customer is not available.");
       }
       $creditLimit = (float)$customer['credit_limit'];
-      $cardStmt = $conn->prepare("SELECT sku_card_id, points_balance FROM tblsku_card WHERE ar_customer_id=:customerId AND is_active=1 AND (expiry_date IS NULL OR expiry_date >= CURDATE()) ORDER BY issued_date DESC, sku_card_id DESC FOR UPDATE");
+
+      $step = 'suki_card_lock';
+      $cardStmt = $conn->prepare("SELECT s.sku_card_id, s.points_balance FROM tblsku_card s WHERE s.ar_customer_id=:customerId AND s.is_active=1 AND (s.expiry_date IS NULL OR s.expiry_date >= CURRENT_DATE) ORDER BY s.issued_date DESC, s.sku_card_id DESC FOR UPDATE");
       $cardStmt->execute([":customerId"=>$customerId]);
       $customerCards = $cardStmt->fetchAll(PDO::FETCH_ASSOC);
       if (count($customerCards) > 1) {
         throw new RuntimeException("Multiple active SUKI cards are linked to this customer. Ask AR Staff to resolve this before completing the sale.");
       }
       if ($customerCards) {
-        $sukiCardId = $customerCards[0]['sku_card_id'];
+        $sukiCardId = (int)$customerCards[0]['sku_card_id'];
         $sukiStatus = 'Has';
         $sukiPointsBalance = $customerCards[0]['points_balance'] === null ? 0 : (float)$customerCards[0]['points_balance'];
       }
     }
+
+    // --- product_lookup ---
     $subtotal = 0;
     $detailRows = [];
-    foreach ($items as $item) {
+    foreach ($items as $idx => $item) {
+      $step = 'product_lookup[' . $idx . ']';
       $productStmt = $conn->prepare(
         "SELECT p.price, COALESCE(pr.discount_rate, 0) AS promo_rate, pr.promo_id, pr.promo_name
          FROM tblproducts p
@@ -279,8 +310,8 @@ function createSale($json) {
            FROM tblproduct_promo pp2
            INNER JOIN tblpromo pr2 ON pr2.promo_id=pp2.promo_id
            WHERE pp2.product_id=p.product_id AND pr2.is_active=1
-             AND (pr2.start_date IS NULL OR pr2.start_date <= CURDATE())
-             AND (pr2.end_date IS NULL OR pr2.end_date >= CURDATE())
+             AND (pr2.start_date IS NULL OR pr2.start_date <= CURRENT_DATE)
+             AND (pr2.end_date IS NULL OR pr2.end_date >= CURRENT_DATE)
            ORDER BY pr2.discount_rate DESC, pr2.promo_id DESC
            LIMIT 1
          )
@@ -288,25 +319,45 @@ function createSale($json) {
       );
       $productStmt->execute([":productId" => $item['productId']]);
       $product = $productStmt->fetch(PDO::FETCH_ASSOC);
-      $quantity = (float)($item['quantity'] ?? 0);
-      $discount = (float)($item['discount'] ?? 0);
-      if (!$product || $quantity <= 0 || $discount < 0) {
-        throw new RuntimeException("Invalid product, quantity, or discount.");
+      if (!$product) {
+        throw new RuntimeException("Product ID " . ($item['productId'] ?? '?') . " was not found or is inactive.");
       }
       $unitPrice = (float)$product['price'];
-      $promoDiscount = round(($quantity * $unitPrice) * (float)$product['promo_rate'] / 100, 2);
-      $totalDiscount = round($discount + $promoDiscount, 2);
-      $lineTotal = ($quantity * $unitPrice) - $totalDiscount;
-      if ($lineTotal < 0) {
-        throw new RuntimeException("Discount cannot exceed the line amount.");
+      $quantity = filter_var($item['quantity'] ?? null, FILTER_VALIDATE_FLOAT);
+      if (!$quantity || $quantity <= 0) {
+        throw new RuntimeException("Item quantities must be positive numbers.");
       }
+      // Task 2: Auto-apply active product promotion discount
+      $promoRate = (float)($product['promo_rate'] ?? 0);
+      $promoId = !empty($product['promo_id']) ? (int)$product['promo_id'] : null;
+      $grossLine = round($quantity * $unitPrice, 2);
+      $promoDiscount = $promoRate > 0 ? round(($grossLine * $promoRate) / 100, 2) : 0.00;
+      $lineTotal = round($grossLine - $promoDiscount, 2);
       $subtotal += $lineTotal;
-      $detailRows[] = [$item['productId'], $product['promo_id'], $quantity, $unitPrice, $totalDiscount, $promoDiscount, $lineTotal, $unitPrice];
+      $detailRows[] = [$item['productId'], $promoId, $quantity, $unitPrice, 0.00, $promoDiscount, $lineTotal, $unitPrice];
     }
-    $taxRate = max(0, (float)($data['taxRate'] ?? 0));
-    $tax = round($subtotal * $taxRate / 100, 2);
-    $total = round($subtotal + $tax, 2);
+    $total = round($subtotal, 2);
+    // PH-standard VAT-inclusive pricing: 12% VAT is included in item prices.
+    // Formula: VATable Sales = total / 1.12; VAT Amount = total - VATable Sales.
+    $vatableSales = round($total / 1.12, 2);
+    $tax = round($total - $vatableSales, 2);
+    $price = $vatableSales;
+
+    // --- suki_points_update ---
+    if ($sukiStatus === 'Has') {
+      $pointsEarned = max(1, (int)floor($total / 100));
+      $newPointsBalance = round(($sukiPointsBalance ?? 0) + $pointsEarned, 2);
+      $sukiPointsBalance = $newPointsBalance;
+      if ($sukiCardId) {
+        $step = 'suki_points_update';
+        $updateCardStmt = $conn->prepare("UPDATE tblsku_card SET points_balance=:newBal WHERE sku_card_id=:cardId");
+        $updateCardStmt->execute([":newBal" => $newPointsBalance, ":cardId" => $sukiCardId]);
+      }
+    }
+
+    // --- credit_exposure ---
     if ($isAr) {
+      $step = 'credit_exposure';
       $exposureStmt = $conn->prepare(
         "SELECT
            COALESCE((SELECT SUM(balance) FROM tblar_invoice
@@ -327,23 +378,179 @@ function createSale($json) {
         );
       }
     }
+
+    // --- insert_sale ---
+    $step = 'insert_sale';
     $balance = $isAr ? $total : 0;
     $saleStmt = $conn->prepare("INSERT INTO tblsales(pos_terminal_id, cashier_user_id, sale_date, sale_type, payment_method_id, ar_customer_id, price, tax_total, total_amount, balance, suki_card_id, suki_card_status, suki_points_balance)
-      VALUES(:terminalId, :cashierId, CURDATE(), :saleType, :paymentMethodId, :customerId, :price, :tax, :total, :balance, :sukiCardId, :sukiStatus, :sukiPoints)");
-    $saleStmt->execute([":terminalId"=>$terminalId, ":cashierId"=>$data['cashierUserId'], ":saleType"=>$data['saleType'], ":paymentMethodId"=>$isAr ? null : $paymentMethodId, ":customerId"=>$customerId, ":price"=>$subtotal, ":tax"=>$tax, ":total"=>$total, ":balance"=>$balance, ":sukiCardId"=>$sukiCardId, ":sukiStatus"=>$sukiStatus, ":sukiPoints"=>$sukiPointsBalance]);
-    $saleId = $conn->lastInsertId();
+      VALUES(:terminalId, :cashierId, CURRENT_DATE, :saleType, :paymentMethodId, :customerId, :price, :tax, :total, :balance, :sukiCardId, :sukiStatus, :sukiPoints)
+      RETURNING sale_id");
+    $saleStmt->execute([":terminalId"=>$terminalId, ":cashierId"=>$data['cashierUserId'], ":saleType"=>$data['saleType'], ":paymentMethodId"=>$isAr ? null : $paymentMethodId, ":customerId"=>$customerId, ":price"=>$price, ":tax"=>$tax, ":total"=>$total, ":balance"=>$balance, ":sukiCardId"=>$sukiCardId, ":sukiStatus"=>$sukiStatus, ":sukiPoints"=>$sukiPointsBalance]);
+    $saleId = $saleStmt->fetchColumn();
+
+    // --- insert_detail ---
+    $step = 'insert_detail';
     $detailStmt = $conn->prepare("INSERT INTO tblsales_detail(sale_id, product_id, promo_id, quantity, unit_price, discount, promo_discount, line_total, cost_at_sale)
       VALUES(:saleId, :productId, :promoId, :quantity, :unitPrice, :discount, :promoDiscount, :lineTotal, :cost)");
-    foreach ($detailRows as $row) {
+    foreach ($detailRows as $dIdx => $row) {
+      $step = 'insert_detail[' . $dIdx . ']';
       $detailStmt->execute([":saleId"=>$saleId, ":productId"=>$row[0], ":promoId"=>$row[1], ":quantity"=>$row[2], ":unitPrice"=>$row[3], ":discount"=>$row[4], ":promoDiscount"=>$row[5], ":lineTotal"=>$row[6], ":cost"=>$row[7]]);
     }
+
+    // --- insert_invoice ---
+    if ($isAr) {
+      $step = 'insert_invoice';
+      $termsStmt = $conn->prepare(
+        "SELECT COALESCE(ct.days, 30) FROM tblar_customers c
+         LEFT JOIN tblar_customer_types ct ON ct.customer_type_id=c.customer_type_id
+         WHERE c.ar_customer_id=:customerId"
+      );
+      $termsStmt->execute([":customerId"=>$customerId]);
+      $termDays = (int)($termsStmt->fetchColumn() ?: 30);
+
+      $invNumber = "INV-" . str_pad((string)$saleId, 8, "0", STR_PAD_LEFT);
+      $invStmt = $conn->prepare(
+        "INSERT INTO tblar_invoice
+          (invoice_number, ar_customer_id, sale_id, created_by_user_id, invoice_date, due_date, invoice_amount, balance, status)
+         VALUES (:number, :customerId, :saleId, :userId, CURRENT_DATE, (CURRENT_DATE + (CAST(:days AS integer) * INTERVAL '1 day'))::date, :amount, :balance, 'Approved')"
+      );
+      $invStmt->execute([
+        ":number" => $invNumber,
+        ":customerId" => $customerId,
+        ":saleId" => $saleId,
+        ":userId" => $data['cashierUserId'],
+        ":days" => $termDays,
+        ":amount" => $total,
+        ":balance" => $total
+      ]);
+    }
+
+    // --- delete_held ---
+    $step = 'delete_held';
+    $heldId = filter_var($data['heldId'] ?? null, FILTER_VALIDATE_INT);
+    if ($heldId && $heldId > 0) {
+      $delHeld = $conn->prepare("DELETE FROM tblheld_transactions WHERE held_id=:heldId");
+      $delHeld->execute([":heldId"=>$heldId]);
+    }
+
     $conn->commit();
-    return json_encode(["returnValue"=>1, "saleId"=>$saleId]);
+    return json_encode([
+      "returnValue" => 1,
+      "status" => 200,
+      "saleId" => $saleId,
+      "pointsEarned" => $pointsEarned ?? 0,
+      "newSukiPointsBalance" => $sukiPointsBalance
+    ]);
   } catch (Throwable $e) {
     if ($conn->inTransaction()) $conn->rollBack();
     http_response_code(422);
-    return json_encode(["returnValue"=>0, "message"=>$e->getMessage()]);
+    // TODO: REMOVE DEBUG FIELDS AFTER FIX — start
+    return json_encode([
+      "returnValue" => 0,
+      "message" => $e->getMessage(),
+      "debug_step" => $step,
+      "debug_code" => $e->getCode(),
+      "debug_file" => basename($e->getFile()) . ':' . $e->getLine(),
+      "debug_trace" => $e->getTraceAsString()
+    ]);
+    // TODO: REMOVE DEBUG FIELDS AFTER FIX — end
   }
+}
+
+function holdTransaction($json, $user) {
+  include "connection-pdo.php";
+  $data = json_decode($json, true);
+  if (!is_array($data) || empty($data['items']) || !is_array($data['items'])) {
+    http_response_code(422);
+    return json_encode(["returnValue" => 0, "message" => "At least one item is required in the cart to hold transaction."]);
+  }
+  $customerLabel = trim($data['customerLabel'] ?? '');
+  $holdRef = trim($data['holdReference'] ?? '');
+  if ($holdRef === '') {
+    $holdRef = "HOLD-" . date("Ymd-His");
+  }
+  $saleType = in_array($data['saleType'] ?? '', ['Cash', 'AR'], true) ? $data['saleType'] : 'Cash';
+  $itemsJson = json_encode($data['items']);
+  $cartStateJson = json_encode([
+    "saleType" => $saleType,
+    "paymentMethodId" => $data['paymentMethodId'] ?? null,
+    "customerId" => $data['customerId'] ?? null,
+    "sukiCardStatus" => $data['sukiCardStatus'] ?? 'None',
+    "sukiCardId" => $data['sukiCardId'] ?? null,
+    "sukiPointsBalance" => $data['sukiPointsBalance'] ?? null,
+    "taxRate" => $data['taxRate'] ?? 0
+  ]);
+  
+  $stmt = $conn->prepare(
+    "INSERT INTO tblheld_transactions(hold_reference, cashier_user_id, customer_label, sale_type, items_json, cart_state_json, created_at)
+     VALUES(:ref, :cashierId, :label, :saleType, :items, :state, CURRENT_TIMESTAMP)
+     RETURNING held_id"
+  );
+  $stmt->execute([
+    ":ref" => $holdRef,
+    ":cashierId" => $user['user_id'],
+    ":label" => $customerLabel !== '' ? $customerLabel : null,
+    ":saleType" => $saleType,
+    ":items" => $itemsJson,
+    ":state" => $cartStateJson
+  ]);
+  $heldId = (int)$stmt->fetchColumn();
+  return json_encode([
+    "returnValue" => 1,
+    "heldId" => $heldId,
+    "holdReference" => $holdRef,
+    "message" => "Transaction held successfully."
+  ]);
+}
+
+function getHeldTransactions() {
+  include "connection-pdo.php";
+  $stmt = $conn->query(
+    "SELECT h.held_id, h.hold_reference, h.cashier_user_id, h.customer_label, h.sale_type,
+            h.items_json, h.cart_state_json, h.created_at,
+            CONCAT(u.first_name, ' ', u.last_name) AS cashier_name
+     FROM tblheld_transactions h
+     LEFT JOIN tblusers u ON u.user_id=h.cashier_user_id
+     ORDER BY h.held_id DESC"
+  );
+  $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+  $result = [];
+  foreach ($rows as $row) {
+    $items = json_decode($row['items_json'], true) ?: [];
+    $itemCount = 0;
+    $totalAmount = 0;
+    foreach ($items as $item) {
+      $qty = (float)($item['quantity'] ?? 1);
+      $price = (float)($item['unitPrice'] ?? 0);
+      $promoRate = (float)($item['promoRate'] ?? 0);
+      $grossLine = $qty * $price;
+      $promoDisc = $promoRate > 0 ? round(($grossLine * $promoRate) / 100, 2) : 0;
+      $lineAmount = $grossLine - $promoDisc;
+      $itemCount += $qty;
+      $totalAmount += $lineAmount;
+    }
+    $result[] = [
+      "held_id" => (int)$row['held_id'],
+      "hold_reference" => $row['hold_reference'],
+      "cashier_user_id" => (int)$row['cashier_user_id'],
+      "cashier_name" => $row['cashier_name'] ?? 'Staff',
+      "customer_label" => $row['customer_label'] ?? '',
+      "sale_type" => $row['sale_type'],
+      "items" => $items,
+      "cart_state" => json_decode($row['cart_state_json'] ?? '{}', true) ?: [],
+      "item_count" => $itemCount,
+      "total_amount" => round($totalAmount, 2),
+      "created_at" => $row['created_at']
+    ];
+  }
+  return json_encode($result);
+}
+
+function deleteHeldTransaction($heldId) {
+  include "connection-pdo.php";
+  $stmt = $conn->prepare("DELETE FROM tblheld_transactions WHERE held_id=:heldId");
+  $stmt->execute([":heldId" => $heldId]);
+  return json_encode(["returnValue" => 1]);
 }
 
 $operation = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['operation'] ?? '') : ($_POST['operation'] ?? '');
@@ -353,7 +560,10 @@ switch ($operation) {
   case "getCreditEligibility": requireRoles(["Admin", "Cashier", "Manager"]); echo getCreditEligibility((int)($_GET['customerId'] ?? 0)); break;
   case "getAllSales": requireRoles(["Admin", "Cashier", "Manager"]); echo getAllSales(); break;
   case "getReceipt": requireRoles(["Admin", "Cashier", "Manager"]); echo getReceipt((int)($_GET['saleId'] ?? 0)); break;
-  case "createSale": requireRoles(["Cashier"]); echo createSale($json); break;
+  case "createSale": requireRoles(["Cashier", "Admin", "Manager"]); echo createSale($json); break;
+  case "holdTransaction": $user = requireRoles(["Cashier", "Admin", "Manager"]); echo holdTransaction($json, $user); break;
+  case "getHeldTransactions": requireRoles(["Cashier", "Admin", "Manager"]); echo getHeldTransactions(); break;
+  case "deleteHeldTransaction": requireRoles(["Cashier", "Admin", "Manager"]); echo deleteHeldTransaction((int)($_POST['heldId'] ?? 0)); break;
   default: http_response_code(400); echo json_encode(["message"=>"Invalid sales operation."]);
 }
 ?>

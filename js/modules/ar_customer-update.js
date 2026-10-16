@@ -1,3 +1,5 @@
+import { showToast, showError } from "../swal-helper.js";
+
 export const updateModal = async (arCustomerId, arCustomerTypeList, refreshDisplay) => {
   const myModal = new bootstrap.Modal(document.getElementById("blank-modal"), {
     keyboard: true,
@@ -51,12 +53,16 @@ export const updateModal = async (arCustomerId, arCustomerTypeList, refreshDispl
     `;
 
   modalFooter.querySelector(".btn-update").addEventListener("click", async () => {
-    if (await updateArCustomer(arCustomerId) == 1) {
-      refreshDisplay();
-      alert("AR Customer record has been successfully updated!");
-      myModal.hide();
-    } else {
-      alert("ERROR!");
+    try {
+      if (await updateArCustomer(arCustomerId) == 1) {
+        refreshDisplay();
+        showToast("AR Customer record has been successfully updated!");
+        myModal.hide();
+      } else {
+        showError("Could not update customer record.");
+      }
+    } catch (err) {
+      showError(err.response?.data?.message || "Failed to update customer record.");
     }
   });
 

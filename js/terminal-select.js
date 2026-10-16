@@ -1,6 +1,6 @@
 import { getSession } from "./auth.js?v=3";
 
-const apiUrl = new URL("../api/pos_terminal.php", import.meta.url).href;
+const apiUrl = "/api/pos_terminal.php";
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("terminal-select-form").addEventListener("submit", selectTerminal);
@@ -41,7 +41,7 @@ const selectTerminal = async (event) => {
   try {
     const { data } = await axios.post(apiUrl, formData, { withCredentials: true });
     if (data.returnValue !== 1) throw new Error("Terminal selection was not saved.");
-    window.location.href = "index.html";
+    window.location.href = "sales.html";
   } catch (requestError) {
     showError(requestError);
   }

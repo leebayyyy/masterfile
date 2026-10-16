@@ -14,11 +14,19 @@ rebuilt to match your reference document's conventions:
 
 ## Setup (XAMPP)
 
-1. Copy this whole `masterfile` folder into `htdocs/`.
-2. Import `database/schema.sql` in phpMyAdmin — it creates the `pos_ar_system`
-   database, all 8 tables, and sample data.
+1. Copy or link this whole `masterfile` folder into `htdocs/`.
+2. Create the database `pos_ar_system` and import `database/pos_ar_system.sql` in phpMyAdmin (or via MySQL CLI).
 3. If your MySQL root user has a password, edit `api/connection-pdo.php`.
-4. Open `http://localhost/masterfile/index.html` in your browser.
+4. Open `http://localhost/masterfile/login.html` in your browser.
+
+### Default Login Accounts
+
+| Username | Password | Role |
+| :--- | :--- | :--- |
+| `admin` | `juantamad` | Admin |
+| `maria` | `mariasantos` | Cashier |
+| `pedro` | `pedropendoko` | Accounts Receivable Staff |
+| `RC` | `rcbaja87` | Manager |
 
 For an existing installation, apply these migrations in order using phpMyAdmin:
 

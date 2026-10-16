@@ -3,6 +3,9 @@ require_once "auth-lib.php";
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Credentials: true');
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Pragma: no-cache");
+header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
 
 function login($json) {
   include "connection-pdo.php";
@@ -12,7 +15,7 @@ function login($json) {
             r.role_id, r.role_name
      FROM tblusers u
      INNER JOIN tblroles r ON u.role_id = r.role_id
-     WHERE u.username = :username AND u.is_active = 1"
+     WHERE LOWER(u.username) = LOWER(:username) AND u.is_active = 1"
   );
   $stmt->execute([":username" => trim($data['username'] ?? '')]);
   $user = $stmt->fetch(PDO::FETCH_ASSOC);

@@ -1,0 +1,25 @@
+# Backend PHP API (hosted on Render)
+api/
+
+# Database dumps and migration scripts
+database/
+
+# Docker and deployment assets
+Dockerfile
+.dockerignore
+docker-entrypoint.sh
+
+# Git and IDE local configs
+.git/
+.gitignore
+.agents/
+.cursor/
+.vscode/
+
+# Environment files and credentials
+.env
+.env.*
+
+# Logs and node modules
+*.log
+node_modules/

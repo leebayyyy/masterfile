@@ -1,3 +1,5 @@
+import { showToast, showError } from "../swal-helper.js";
+
 export const updateModal = async (posTerminalId, refreshDisplay) => {
   const myModal = new bootstrap.Modal(document.getElementById("blank-modal"), {
     keyboard: true,
@@ -27,10 +29,10 @@ export const updateModal = async (posTerminalId, refreshDisplay) => {
   modalFooter.querySelector(".btn-update").addEventListener("click", async () => {
     if (await updatePosTerminal(posTerminalId) == 1) {
       refreshDisplay();
-      alert("POS Terminal record has been successfully updated!");
+      showToast("POS Terminal record has been successfully updated!", "success");
       myModal.hide();
     } else {
-      alert("ERROR!");
+      showError("Failed to update POS terminal.");
     }
   });
 

@@ -1,3 +1,5 @@
+import { showToast, showError } from "../swal-helper.js";
+
 export const updateModal = async (userId, roleList, refreshDisplay, currentUserId) => {
   const myModal = new bootstrap.Modal(document.getElementById("blank-modal"), {
     keyboard: true,
@@ -70,7 +72,7 @@ export const updateModal = async (userId, roleList, refreshDisplay, currentUserI
     try {
       if (await updateUser(userId) == 1) {
         await refreshDisplay();
-        alert("Employee account successfully updated.");
+        showToast("Employee account successfully updated.", "success");
         myModal.hide();
       } else {
         throw new Error("Employee account was not updated.");

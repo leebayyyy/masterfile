@@ -1,0 +1,693 @@
+/* ==========================================================================
+   Supermarket POS Console Layout Styles (Phase 1 Rework)
+   Coherent, High-Contrast Supermarket Cashier Interface
+   ========================================================================== */
+
+:root {
+  --pos-dark-bg: #0f172a;
+  --pos-card-bg: #1e293b;
+  --pos-accent-green: #10b981;
+  --pos-accent-green-glow: rgba(16, 185, 129, 0.25);
+  --pos-accent-cyan: #06b6d4;
+  --pos-accent-amber: #f59e0b;
+  --pos-accent-blue: #2563eb;
+  --pos-border-color: #334155;
+  --pos-light-surface: #f8fafc;
+  --pos-border-subtle: #e2e8f0;
+}
+
+body.pos-body {
+  background-color: #f1f5f9;
+  min-height: 100vh;
+  min-height: 100dvh;
+  color: #1e293b;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Tab Views */
+.pos-view {
+  display: block;
+}
+
+.pos-view.d-none {
+  display: none !important;
+}
+
+/* Station Status Header Bar */
+.pos-station-header {
+  background: var(--pos-dark-bg);
+  color: #f8fafc;
+  border-radius: 0.5rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--pos-border-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.pos-station-header .badge {
+  font-size: 0.825rem;
+  letter-spacing: 0.5px;
+}
+
+/* Massive Grand Total Display */
+.pos-total-display {
+  background: var(--pos-dark-bg);
+  border: 2px solid var(--pos-accent-green);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  color: #ffffff;
+  box-shadow: 0 4px 16px var(--pos-accent-green-glow);
+  text-align: right;
+  margin-bottom: 0.75rem;
+}
+
+.pos-total-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  margin-bottom: 0.2rem;
+}
+
+.pos-total-amount {
+  font-size: 2.75rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--pos-accent-green);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+/* Barcode Input Bar */
+.pos-barcode-container {
+  position: relative;
+  margin-bottom: 0.5rem;
+}
+
+.pos-barcode-input {
+  font-size: 1.25rem;
+  font-weight: 700;
+  padding: 0.65rem 1rem;
+  border: 2px solid #0d6efd;
+  border-radius: 0.5rem;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.pos-barcode-input:focus {
+  border-color: #0b5ed7;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+  outline: none;
+}
+
+/* Scan Feedback Banner */
+.pos-scan-feedback {
+  min-height: 1.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.25rem;
+}
+
+/* Scanned Items Table Card */
+.pos-cart-card {
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: #ffffff;
+}
+
+.pos-cart-table-wrapper {
+  min-height: 240px;
+  max-height: calc(100vh - 340px);
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.pos-cart-table {
+  margin-bottom: 0;
+  font-size: 0.925rem;
+  width: 100%;
+}
+
+.pos-cart-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f1f5f9;
+  color: #334155;
+  font-weight: 700;
+  border-bottom: 2px solid #cbd5e1;
+  z-index: 2;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0.6rem 0.5rem;
+  white-space: nowrap;
+}
+
+.pos-cart-table tbody tr {
+  cursor: pointer;
+  transition: background-color 0.1s ease-in-out;
+}
+
+.pos-cart-table tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+.pos-cart-table tbody tr.table-active {
+  background-color: #dbeafe !important;
+  font-weight: 600;
+}
+
+.pos-cart-table .num-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Keyboard Shortcut Toolbar */
+.pos-hotkey-dock {
+  background: var(--pos-dark-bg);
+  color: #f8fafc;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--pos-border-color);
+}
+
+.pos-hotkey-btn {
+  background: #1e293b;
+  color: #f8fafc;
+  border: 1px solid #475569;
+  border-radius: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.775rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease-in-out;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  text-decoration: none;
+}
+
+.pos-hotkey-btn:hover,
+.pos-hotkey-btn:focus-visible {
+  background: #334155;
+  color: #38bdf8;
+  border-color: #38bdf8;
+}
+
+.pos-key-badge {
+  background: #0f172a;
+  color: var(--pos-accent-amber);
+  border: 1px solid #475569;
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.25rem;
+  font-family: monospace;
+  font-weight: 700;
+  font-size: 0.725rem;
+}
+
+/* Tender Modal & Sukli (Change) Display */
+.pos-tender-total-box {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  text-align: right;
+  margin-bottom: 1rem;
+}
+
+.pos-sukli-box {
+  background: var(--pos-dark-bg);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  text-align: right;
+  margin-top: 1rem;
+  border: 2px solid var(--pos-border-color);
+}
+
+.pos-sukli-box.sufficient {
+  border-color: var(--pos-accent-green);
+  box-shadow: 0 0 12px var(--pos-accent-green-glow);
+}
+
+.pos-sukli-box.insufficient {
+  border-color: #ef4444;
+}
+
+.pos-sukli-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin-bottom: 0.25rem;
+}
+
+.pos-sukli-amount {
+  font-size: 2.25rem;
+  font-weight: 800;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--pos-accent-green);
+  line-height: 1.1;
+}
+
+.pos-sukli-amount.insufficient {
+  color: #ef4444;
+  font-size: 1.5rem;
+}
+
+.pos-quick-cash-btn {
+  font-weight: 600;
+  font-family: monospace;
+  min-height: 38px;
+}
+
+/* Thermal Receipt Styling */
+.pos-receipt-slip {
+  font-family: "Courier New", Courier, monospace;
+  background: #fff;
+  border: 1px dashed #94a3b8;
+  padding: 1.25rem;
+  border-radius: 0.25rem;
+  color: #0f172a;
+  line-height: 1.4;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.pos-receipt-slip hr {
+  border-top: 1px dashed #64748b;
+  opacity: 0.7;
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN SYSTEM
+   320px | 375px | 768px | 1024px | 1440px+
+   ========================================================================== */
+
+/* Narrow Mobile Screens (320px - 575.98px) */
+@media (max-width: 575.98px) {
+  body.pos-body {
+    padding-top: 0 !important;
+  }
+
+  .container-fluid {
+    padding-left: 0.35rem !important;
+    padding-right: 0.35rem !important;
+  }
+
+  .pos-station-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 0.35rem !important;
+    padding: 0.5rem 0.75rem;
+  }
+
+  /* Scan Bar Responsive Layout */
+  .pos-barcode-container .input-group {
+    flex-wrap: wrap;
+  }
+
+  .pos-barcode-container .input-group-text {
+    font-size: 0.9rem;
+    padding: 0.4rem 0.6rem;
+  }
+
+  .pos-barcode-input {
+    font-size: 1rem;
+    padding: 0.5rem 0.75rem;
+    flex: 1 1 100% !important;
+    width: 100%;
+    border-radius: 0.35rem !important;
+    margin-bottom: 0.25rem;
+  }
+
+  .pos-barcode-container .btn {
+    min-height: 44px;
+    font-size: 0.8rem;
+    padding: 0.4rem 0.5rem;
+    flex: 1 1 auto;
+    border-radius: 0.35rem !important;
+  }
+
+  /* Scanned Items Table */
+  .pos-cart-table-wrapper {
+    min-height: 180px;
+    max-height: 250px;
+  }
+
+  .pos-cart-table {
+    font-size: 0.8rem;
+  }
+
+  .pos-cart-table thead th {
+    font-size: 0.725rem;
+    padding: 0.4rem 0.3rem;
+  }
+
+  .pos-cart-table td {
+    padding: 0.4rem 0.3rem;
+  }
+
+  /* Total Display */
+  .pos-total-display {
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .pos-total-amount {
+    font-size: 1.85rem;
+  }
+
+  /* Tender Action Button */
+  #btn-open-tender {
+    font-size: 1.25rem !important;
+    padding-top: 0.85rem !important;
+    padding-bottom: 0.85rem !important;
+    min-height: 52px;
+  }
+
+  /* Hotkey Toolbar */
+  .pos-hotkey-dock {
+    padding: 0.4rem 0.5rem;
+  }
+
+  .pos-hotkey-btn {
+    min-height: 40px;
+    font-size: 0.725rem;
+  }
+}
+
+/* Tablet Screens (576px - 991.98px) */
+@media (min-width: 576px) and (max-width: 991.98px) {
+  .pos-cart-table-wrapper {
+    min-height: 260px;
+    max-height: 380px;
+  }
+
+  .pos-total-amount {
+    font-size: 2.25rem;
+  }
+
+  .pos-barcode-input {
+    font-size: 1.15rem;
+  }
+
+  .pos-hotkey-btn {
+    min-height: 38px;
+  }
+}
+
+/* Sleek POS Scrollbars */
+.pos-cart-table-wrapper::-webkit-scrollbar,
+.pos-payment-card::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.pos-cart-table-wrapper::-webkit-scrollbar-track,
+.pos-payment-card::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.pos-cart-table-wrapper::-webkit-scrollbar-thumb,
+.pos-payment-card::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+
+.pos-cart-table-wrapper::-webkit-scrollbar-thumb:hover,
+.pos-payment-card::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* ==========================================================================
+   Fixed-Viewport POS Terminal Layout (Desktop >= 992px)
+   Entire screen fits within 100vh - Zero page-level vertical scrolling
+   Only the cart table scrolls internally with sticky header
+   ========================================================================== */
+
+@media (min-width: 992px) {
+  html:has(body.pos-terminal-active),
+  body.pos-body.pos-terminal-active {
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-height: 100vh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+  }
+
+  body.pos-body.pos-terminal-active {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  body.pos-body.pos-terminal-active > nav.navbar {
+    flex: 0 0 auto !important;
+    z-index: 1030;
+  }
+
+  body.pos-body.pos-terminal-active > main.container-fluid {
+    flex: 1 1 0px !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+  }
+
+  body.pos-body.pos-terminal-active #view-checkout {
+    flex: 1 1 0px !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  body.pos-body.pos-terminal-active #view-checkout.d-none {
+    display: none !important;
+  }
+
+  body.pos-body.pos-terminal-active #view-checkout .pos-station-header {
+    flex: 0 0 auto !important;
+    margin-bottom: 0.25rem !important;
+    padding: 0.35rem 0.75rem !important;
+  }
+
+  body.pos-body.pos-terminal-active #sale-form {
+    flex: 1 1 0px !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  body.pos-body.pos-terminal-active #sale-form > .row,
+  body.pos-body.pos-terminal-active .pos-terminal-row {
+    flex: 1 1 0px !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    --bs-gutter-y: 0 !important;
+  }
+
+  body.pos-body.pos-terminal-active .pos-terminal-row > * {
+    margin-top: 0 !important;
+  }
+
+  /* Left Column: Fixed Terminal Flex Layout */
+  .pos-left-column {
+    height: 100% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .pos-barcode-container {
+    flex: 0 0 auto !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  .pos-barcode-container .input-group-lg {
+    min-height: 42px;
+  }
+
+  .pos-barcode-container .input-group-text {
+    font-size: 0.95rem;
+    padding: 0.35rem 0.75rem;
+  }
+
+  .pos-barcode-input {
+    font-size: 1.05rem;
+    padding: 0.4rem 0.75rem;
+  }
+
+  .pos-barcode-container .card {
+    margin-top: 0.25rem !important;
+    padding: 0.25rem 0.5rem !important;
+  }
+
+  .pos-scan-feedback {
+    min-height: 1.15rem !important;
+    font-size: 0.785rem !important;
+    padding: 0.05rem 0.25rem !important;
+    margin-top: 0.1rem !important;
+  }
+
+  /* Cart Card & Internal Scroll Container */
+  .pos-cart-card {
+    flex: 1 1 0px !important;
+    min-height: 80px !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    margin-bottom: 0.25rem !important;
+    overflow: hidden !important;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.5rem;
+    background: #ffffff;
+  }
+
+  .pos-cart-table-wrapper {
+    flex: 1 1 0px !important;
+    height: 100% !important;
+    min-height: 60px !important;
+    max-height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+    position: relative !important;
+  }
+
+  .pos-cart-table {
+    margin-bottom: 0;
+    width: 100%;
+  }
+
+  .pos-cart-table thead th {
+    position: sticky !important;
+    top: 0 !important;
+    background: #f1f5f9 !important;
+    color: #334155 !important;
+    font-weight: 700 !important;
+    border-bottom: 2px solid #cbd5e1 !important;
+    z-index: 10 !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    padding: 0.5rem 0.5rem !important;
+  }
+
+  /* Hotkey Toolbar docked at bottom */
+  .pos-hotkey-dock {
+    flex: 0 0 auto !important;
+    margin-bottom: 0 !important;
+    padding: 0.3rem 0.5rem !important;
+    gap: 0.25rem !important;
+  }
+
+  .pos-hotkey-btn {
+    padding: 0.25rem 0.45rem !important;
+    font-size: 0.75rem !important;
+    min-height: 28px !important;
+  }
+
+  /* Right Column (Payment Column): Fixed Terminal Layout */
+  .pos-payment-column {
+    height: 100% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    position: static !important;
+    top: auto !important;
+    overflow: hidden !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .pos-total-display {
+    flex: 0 0 auto !important;
+    margin-bottom: 0.25rem !important;
+    padding: 0.55rem 0.85rem !important;
+  }
+
+  .pos-total-label {
+    font-size: 0.75rem;
+    margin-bottom: 0.15rem;
+  }
+
+  .pos-total-amount {
+    font-size: 2.35rem;
+    line-height: 1.1;
+  }
+
+  .pos-payment-card {
+    flex: 1 1 0px !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    margin-bottom: 0.25rem !important;
+    padding: 0.5rem 0.75rem !important;
+  }
+
+  .pos-payment-actions {
+    flex: 0 0 auto !important;
+    margin-top: auto !important;
+    margin-bottom: 0 !important;
+  }
+
+  #btn-open-tender {
+    padding-top: 0.65rem !important;
+    padding-bottom: 0.65rem !important;
+    font-size: 1.25rem !important;
+  }
+
+  #btn-cancel-sale {
+    padding-top: 0.3rem !important;
+    padding-bottom: 0.3rem !important;
+    font-size: 0.875rem !important;
+  }
+}
+
+/* Wide Desktop Screens (1440px and larger) */
+@media (min-width: 1440px) {
+  .pos-total-amount {
+    font-size: 2.85rem;
+  }
+
+  #btn-open-tender {
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.75rem !important;
+    font-size: 1.35rem !important;
+  }
+}
+
+/* Print Styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-receipt, #printable-receipt * {
+    visibility: visible;
+  }
+  #printable-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}
