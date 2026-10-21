@@ -2,7 +2,7 @@
 require_once "auth-lib.php";
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
-requireRoles(["Admin", "Manager"]);
+requireRoles(["Admin", "Manager", "Supervisor"]);
 include "connection-pdo.php";
 
 $operation = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['operation'] ?? '') : ($_POST['operation'] ?? '');

@@ -1,8 +1,8 @@
-import { updateModal } from "./modules/pos_terminal-update.js?v=3";
-import { deleteModal } from "./modules/pos_terminal-delete.js?v=3";
-import { getSession } from "./auth.js?v=3";
+import { updateModal } from "./modules/pos_terminal-update.js?v=20261021";
+import { deleteModal } from "./modules/pos_terminal-delete.js?v=20261021";
+import { getSession } from "./auth.js?v=20261021";
 
-const baseApiUrl = "/api";
+const baseApiUrl = "api";
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 let canManageTerminals = false;

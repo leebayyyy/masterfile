@@ -8,7 +8,7 @@ $json = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['json'] ?? '') : ($_POST['
 $data = json_decode($json, true);
 
 if ($operation === 'getAllPosTerminals') {
-  requireRoles(["Admin", "Cashier", "Manager"]);
+  requireRoles(["Admin", "Cashier", "Manager", "Supervisor"]);
   include "connection-pdo.php";
   echo json_encode($conn->query(
     "SELECT pos_terminal_id, terminal_name FROM tblpos_terminals ORDER BY terminal_name"
@@ -52,7 +52,7 @@ if ($operation === 'selectTerminal') {
   exit;
 }
 
-requireRoles(["Admin"]);
+requireRoles(["Admin", "Manager", "Supervisor"]);
 include "connection-pdo.php";
 
 if ($operation === 'getPosTerminal') {

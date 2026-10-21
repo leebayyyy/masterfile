@@ -2,7 +2,7 @@ import { updateModal } from "./modules/role-update.js";
 import { deleteModal } from "./modules/role-delete.js";
 import { showToast, showError } from "./swal-helper.js";
 
-const baseApiUrl = "/api";
+const baseApiUrl = "api";
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 document.addEventListener("DOMContentLoaded", () => {

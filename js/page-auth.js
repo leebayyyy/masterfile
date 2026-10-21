@@ -1,4 +1,4 @@
-import { requirePageRole, addLogout, getSession, logoutUser, confirmLogout } from "./auth.js?v=9";
+import { requirePageRole, addLogout, getSession, logoutUser, confirmLogout } from "./auth.js?v=20261021";
 
 const page = window.location.pathname.split("/").pop() || "index.html";
 
@@ -7,19 +7,19 @@ if (page === "ar_transactions.html") {
 }
 
 const permissions = {
-  "index.html": ["Admin", "Accounts Receivable Staff", "Manager", "Cashier"],
-  "role.html": ["Admin"],
-  "user.html": ["Admin"],
-  "product_category.html": ["Admin"],
-  "product.html": ["Admin", "Manager"],
-  "pos_terminal.html": ["Admin", "Manager"],
-  "ar_customer_type.html": ["Admin", "Accounts Receivable Staff", "Manager"],
-  "ar_customer.html": ["Admin", "Accounts Receivable Staff", "Manager"],
-  "payment.html": ["Admin", "Accounts Receivable Staff", "Manager"],
-  "sales.html": ["Admin", "Cashier", "Manager"],
-  "reports.html": ["Admin", "Accounts Receivable Staff", "Manager"],
-  "settings.html": ["Admin", "Manager"],
-  "suki_card.html": ["Admin", "Manager"],
+  "index.html": ["Admin", "Accounts Receivable Staff", "Manager", "Cashier", "Supervisor"],
+  "role.html": ["Admin", "Manager", "Supervisor"],
+  "user.html": ["Admin", "Manager", "Supervisor"],
+  "product_category.html": ["Admin", "Manager", "Supervisor"],
+  "product.html": ["Admin", "Manager", "Supervisor"],
+  "pos_terminal.html": ["Admin", "Manager", "Supervisor"],
+  "ar_customer_type.html": ["Admin", "Accounts Receivable Staff", "Manager", "Supervisor"],
+  "ar_customer.html": ["Admin", "Accounts Receivable Staff", "Manager", "Supervisor"],
+  "payment.html": ["Admin", "Accounts Receivable Staff", "Manager", "Supervisor"],
+  "sales.html": ["Admin", "Cashier", "Manager", "Supervisor"],
+  "reports.html": ["Admin", "Accounts Receivable Staff", "Manager", "Supervisor"],
+  "settings.html": ["Admin", "Manager", "Supervisor"],
+  "suki_card.html": ["Admin", "Manager", "Supervisor"],
   "terminal_select.html": ["Cashier"],
 };
 
@@ -223,6 +223,8 @@ function renderSidebarLayout(existingNav, currentUser, session) {
       ? "bg-primary text-white"
       : currentUser.role_name === "Manager"
       ? "bg-info text-dark"
+      : currentUser.role_name === "Supervisor"
+      ? "bg-warning text-dark"
       : "bg-success text-white";
   rolePill.className = `badge app-topbar-role-badge ${roleBadgeClass}`;
   rolePill.textContent = currentUser.role_name;

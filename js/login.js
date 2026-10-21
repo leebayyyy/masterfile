@@ -1,4 +1,4 @@
-const authUrl = "/api/auth.php";
+const authUrl = "api/auth.php";
 
 const passwordInput = document.getElementById("password");
 const usernameInput = document.getElementById("username");

@@ -2,7 +2,7 @@ import { updateModal } from "./modules/user-update.js";
 import { deactivateModal } from "./modules/user-delete.js";
 import { showToast, showError as showSwalError } from "./swal-helper.js";
 
-const baseApiUrl = "/api";
+const baseApiUrl = "api";
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 let roleList = [];
@@ -33,7 +33,7 @@ const loadRole = async () => {
   });
   if (response.status == 200) {
     roleList = response.data.filter((role) =>
-      ["Cashier", "Accounts Receivable Staff", "Manager"].includes(role.role_name));
+      ["Cashier", "Accounts Receivable Staff", "Manager", "Supervisor"].includes(role.role_name));
     select.innerHTML = '<option value="">-- SELECT ROLE --</option>';
     roleList.forEach((role) => {
       const option = document.createElement("option");

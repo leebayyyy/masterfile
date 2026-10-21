@@ -1,6 +1,6 @@
 # POS & AR System — Localhost Defense Runbook & Demo Guide
 
-This runbook contains the exact steps and commands to launch, configure, and demonstrate the **PHP + PostgreSQL Point of Sale (POS) & Accounts Receivable (AR) System** on **LOCALHOST** for final defense. It requires **no active internet connection** once local setup is complete.
+This runbook contains the exact steps and commands to launch, configure, and demonstrate the **PHP + MySQL (XAMPP) Point of Sale (POS) & Accounts Receivable (AR) System** on **LOCALHOST** for final defense. It requires **no active internet connection** once local setup is complete.
 
 ---
 
@@ -8,8 +8,8 @@ This runbook contains the exact steps and commands to launch, configure, and dem
 
 | Component | Path / Requirement | Status / Note |
 |---|---|---|
-| **PHP Engine** | `C:\xampp\php\php.exe` (PHP 8.0.30+) | `pdo_pgsql` and `pgsql` extensions must be enabled in `php.ini` |
-| **PostgreSQL** | PostgreSQL 14+ on `localhost:5432` | Standard install, pgAdmin 4, or Docker container |
+| **PHP Engine** | `C:\xampp\php\php.exe` (PHP 8.0.30+) | `pdo_mysql` extension enabled (default in XAMPP) |
+| **MySQL / MariaDB** | XAMPP MySQL on `localhost:3306` | Start **MySQL** from the XAMPP Control Panel; use phpMyAdmin at `http://localhost/phpmyadmin` |
 | **Web Browser** | Google Chrome or Microsoft Edge | Supports kiosk/app mode for zero-mouse cashier testing |
 
 ---
@@ -17,48 +17,52 @@ This runbook contains the exact steps and commands to launch, configure, and dem
 ## 2. Database Setup & Migrations
 
 ### Option A: Initialize Database from Scratch (Clean Setup)
-Open PowerShell or Command Prompt:
+Start **MySQL** in the XAMPP Control Panel, then open PowerShell from the project folder (`masterfile`):
 
 ```powershell
 # 1. Create the database
-createdb -U postgres -h localhost pos_ar_system
+C:\xampp\mysql\bin\mysql.exe -u root -e "CREATE DATABASE IF NOT EXISTS pos_ar_system CHARACTER SET utf8mb4"
 
-# 2. Run the master schema and seed script
-psql -U postgres -h localhost -d pos_ar_system -f "c:\Users\orcuu\OneDrive\Documents\project\masterfile3\masterfile\database\pos_ar_system.pg.sql"
+# 2. Import the base schema and seed data
+C:\xampp\mysql\bin\mysql.exe -u root pos_ar_system < database\pos_ar_system.sql
+
+# 3. Apply the revisions (supervisor/cashier accounts, shifts, drawer events, held transactions, wholesale prices, ...)
+C:\xampp\mysql\bin\mysql.exe -u root pos_ar_system < database\revisions_mysql.sql
 ```
 
-### Option B: Migrate Existing Database
-If `pos_ar_system` already exists, run the incremental migration:
+(You can also import both `.sql` files through phpMyAdmin → `pos_ar_system` → **Import**, base schema first.)
+
+### Option B: Update an Existing Database
+If `pos_ar_system` already exists, only run the revisions script (it is safe to re-run):
 
 ```powershell
-psql -U postgres -h localhost -d pos_ar_system -f "c:\Users\orcuu\OneDrive\Documents\project\masterfile3\masterfile\database\revisions_migration.sql"
+C:\xampp\mysql\bin\mysql.exe -u root pos_ar_system < database\revisions_mysql.sql
 ```
 
 ### Verify Database Tables:
-Run this quick query in `psql`:
+Run this quick query in phpMyAdmin or the `mysql` client:
 ```sql
-SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;
+SHOW TABLES;
 ```
-Ensure `tblshifts`, `tbldrawer_events`, `tblauthorization_log`, and `tblpayment_allocations` are present.
+Ensure `tblshifts`, `tbldrawer_events`, `tblauthorization_log`, `tblpayment_allocations`, `tblheld_transactions`, and `tblwholesale_prices` are present.
 
 ---
 
 ## 3. Local Environment Configuration
 
-1. In the `api/` folder, copy the example configuration:
+1. The API reads `api/config.local.php`. If it does not exist, copy the example:
    ```powershell
-   Copy-Item "c:\Users\orcuu\OneDrive\Documents\project\masterfile3\masterfile\api\config.local.php.example" "c:\Users\orcuu\OneDrive\Documents\project\masterfile3\masterfile\api\config.local.php"
+   Copy-Item api\config.local.php.example api\config.local.php
    ```
 
-2. Open `api/config.local.php` and verify your local PostgreSQL credentials:
+2. Open `api/config.local.php` and verify your XAMPP MySQL credentials:
    ```php
    return [
      'db_host'   => 'localhost',
-     'db_port'   => 5432,
+     'db_port'   => 3306,
      'db_name'   => 'pos_ar_system',
-     'db_user'   => 'postgres',
-     'db_pass'   => 'postgres',       // Match your local postgres user password
-     'ssl_mode'  => 'disable'         // 'disable' allows localhost without SSL certs
+     'db_user'   => 'root',
+     'db_pass'   => ''               // XAMPP default: empty password for root
    ];
    ```
 
@@ -69,7 +73,7 @@ Ensure `tblshifts`, `tbldrawer_events`, `tblauthorization_log`, and `tblpayment_
 Run the built-in PHP server from the workspace root:
 
 ```powershell
-cd "c:\Users\orcuu\OneDrive\Documents\project\masterfile3\masterfile"
+cd path\to\masterfile
 C:\xampp\php\php.exe -S localhost:8000
 ```
 
@@ -103,6 +107,7 @@ start msedge.exe --app=http://localhost:8000/login.html
 | **Supervisor** | `supervisor` | `supervisor123` | Authorizes voids, line overrides, cash float, and cash lift |
 | **Cashier** | `cashier` | `cashier123` | Operates cashier terminal, scanning, tender, hold/resume |
 | **Admin** | `admin` | `admin123` | Full system configuration, roles, terminals, products |
+| **Manager** | `RC` | `manager123` | Oversees products, terminals, loyalty cards, AR, sales, and reports |
 | **AR Staff** | `ar_staff` | `ar123` | Handles credit limits, invoices, and FIFO collections |
 
 ---

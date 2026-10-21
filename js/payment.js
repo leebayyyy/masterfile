@@ -1,6 +1,6 @@
 import { showToast, showError, showSuccess } from "./swal-helper.js";
 
-const baseApiUrl = "/api";
+const baseApiUrl = "api";
 
 let openInvoices = [];
 let paymentMethods = [];

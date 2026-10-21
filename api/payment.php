@@ -39,7 +39,7 @@ require_once "auth-lib.php";
   function getAllPayments(){
     include "connection-pdo.php";
     $sql = "SELECT h.payment_id, h.payment_date, h.amount, h.reference_number, h.notes,
-                   COALESCE(STRING_AGG(DISTINCT i.invoice_number, ', '), '—') AS invoice_number,
+                   COALESCE(GROUP_CONCAT(DISTINCT i.invoice_number SEPARATOR ', '), '—') AS invoice_number,
                    c.customer_name, m.method_name,
                    COUNT(DISTINCT d.ar_invoice_id) AS invoice_count
             FROM tblpayment_header h
@@ -61,7 +61,7 @@ require_once "auth-lib.php";
     }
     $hdrStmt = $conn->prepare(
       "SELECT h.payment_id, h.payment_date, h.amount, h.reference_number, h.notes,
-              m.method_name, u.fullname AS processed_by
+              m.method_name, CONCAT(u.first_name, ' ', u.last_name) AS processed_by
        FROM tblpayment_header h
        LEFT JOIN tblpayment_method m ON h.payment_method_id = m.payment_method_id
        LEFT JOIN tblusers u ON h.processed_by_user_id = u.user_id
@@ -119,7 +119,7 @@ require_once "auth-lib.php";
       $invNumber = "INV-" . str_pad((string)$ub['sale_id'], 8, "0", STR_PAD_LEFT);
       $ins = $conn->prepare(
         "INSERT INTO tblar_invoice (invoice_number, ar_customer_id, sale_id, created_by_user_id, invoice_date, due_date, invoice_amount, balance, status)
-         VALUES (:number, :customerId, :saleId, :userId, :saleDate, (CAST(:saleDate2 AS date) + (CAST(:days AS integer) * INTERVAL '1 day'))::date, :amount, :balance, 'Approved')"
+         VALUES (:number, :customerId, :saleId, :userId, :saleDate, DATE_ADD(CAST(:saleDate2 AS DATE), INTERVAL CAST(:days AS SIGNED) DAY), :amount, :balance, 'Approved')"
       );
       $ins->execute([
         ":number" => $invNumber,
@@ -145,7 +145,7 @@ require_once "auth-lib.php";
                    END AS collection_status,
                    CASE
                      WHEN COALESCE(i.balance, 0) > 0 AND i.due_date < CURRENT_DATE
-                     THEN (CURRENT_DATE - i.due_date)
+                     THEN DATEDIFF(CURRENT_DATE, i.due_date)
                      ELSE 0
                    END AS days_overdue
             FROM tblar_invoice i
@@ -220,8 +220,7 @@ require_once "auth-lib.php";
       $headerStmt = $conn->prepare(
         "INSERT INTO tblpayment_header
           (payment_date, amount, payment_method_id, processed_by_user_id, reference_number, notes)
-         VALUES (:paymentDate, :amount, :paymentMethodId, :processedByUserId, :referenceNumber, :notes)
-         RETURNING payment_id"
+         VALUES (:paymentDate, :amount, :paymentMethodId, :processedByUserId, :referenceNumber, :notes)"
       );
       $headerStmt->execute([
         ":paymentDate" => $paymentDate,
@@ -231,7 +230,7 @@ require_once "auth-lib.php";
         ":referenceNumber" => $referenceNumber,
         ":notes" => $data['notes'] ?? null
       ]);
-      $paymentId = $headerStmt->fetchColumn();
+      $paymentId = (int)$conn->lastInsertId();
 
       $detailStmt = $conn->prepare(
         "INSERT INTO tblpayment_detail (payment_id, ar_invoice_id, applied_amount, applied_date)
@@ -407,8 +406,7 @@ require_once "auth-lib.php";
       $referenceNumber = "PAY-" . date("Ymd") . "-" . bin2hex(random_bytes(8));
       $headerStmt = $conn->prepare(
         "INSERT INTO tblpayment_header (payment_date, amount, payment_method_id, processed_by_user_id, reference_number, notes)
-         VALUES (:paymentDate, :amount, :paymentMethodId, :processedByUserId, :referenceNumber, :notes)
-         RETURNING payment_id"
+         VALUES (:paymentDate, :amount, :paymentMethodId, :processedByUserId, :referenceNumber, :notes)"
       );
       $headerStmt->execute([
         ":paymentDate" => $paymentDate,
@@ -418,7 +416,7 @@ require_once "auth-lib.php";
         ":referenceNumber" => $referenceNumber,
         ":notes" => $notes ?: "FIFO Allocation Settlement"
       ]);
-      $paymentId = (int)$headerStmt->fetchColumn();
+      $paymentId = (int)$conn->lastInsertId();
 
       $allocatedRecords = [];
       $allocStmt = $conn->prepare(
@@ -509,31 +507,31 @@ require_once "auth-lib.php";
   $json = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['json'] ?? '') : ($_POST['json'] ?? '');
   switch ($operation) {
     case "getPaymentFormData":
-      $user = requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager"]);
+      $user = requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager", "Supervisor"]);
       echo getPaymentFormData($user);
       break;
     case "getAllPayments":
-      requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager"]);
+      requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager", "Supervisor"]);
       echo getAllPayments();
       break;
     case "getAllInvoices":
-      requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager"]);
+      requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager", "Supervisor"]);
       echo getAllInvoices();
       break;
     case "previewFifoAllocation":
-      requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager"]);
+      requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager", "Supervisor"]);
       echo previewFifoAllocation($json);
       break;
     case "insertFifoPayment":
-      $user = requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager"]);
+      $user = requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager", "Supervisor"]);
       echo insertFifoPayment($json, $user);
       break;
     case "insertPayment":
-      requireRoles(["Accounts Receivable Staff", "Admin", "Manager", "Cashier"]);
+      requireRoles(["Accounts Receivable Staff", "Admin", "Manager", "Cashier", "Supervisor"]);
       echo insertPayment($json);
       break;
     case "getPaymentAllocations":
-      requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager"]);
+      requireRoles(["Admin", "Cashier", "Accounts Receivable Staff", "Manager", "Supervisor"]);
       $pid = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['payment_id'] ?? ($_GET['id'] ?? null)) : ($_POST['payment_id'] ?? null);
       echo getPaymentAllocations($pid);
       break;

@@ -18,7 +18,7 @@ function getFormData($user) {
   }
   return json_encode([
     "products" => $conn->query(
-      "SELECT p.product_id, COALESCE(p.barcode, LPAD(p.product_id::text, 8, '0')) AS barcode, p.product_name, p.price, COALESCE(pr.discount_rate, 0) AS promo_rate,
+      "SELECT p.product_id, COALESCE(p.barcode, LPAD(p.product_id, 8, '0')) AS barcode, p.product_name, p.price, COALESCE(pr.discount_rate, 0) AS promo_rate,
               pr.promo_id, pr.promo_name
        FROM tblproducts p
        LEFT JOIN tblpromo pr ON pr.promo_id=(
@@ -107,7 +107,7 @@ function getAllSales() {
   $sql = "SELECT s.sale_id, s.sale_date, s.sale_type, s.price, s.tax_total, s.total_amount, s.balance,
                  m.method_name AS payment_method,
                  COALESCE((SELECT SUM(sd.promo_discount) FROM tblsales_detail sd WHERE sd.sale_id=s.sale_id), 0) AS promotion_discount,
-                 (SELECT STRING_AGG(DISTINCT pr.promo_name, ', ' ORDER BY pr.promo_name)
+                 (SELECT GROUP_CONCAT(DISTINCT pr.promo_name ORDER BY pr.promo_name SEPARATOR ', ')
                   FROM tblsales_detail sd INNER JOIN tblpromo pr ON pr.promo_id=sd.promo_id
                   WHERE sd.sale_id=s.sale_id) AS promotions_applied,
                  c.customer_name,
@@ -354,10 +354,9 @@ function createSale($json) {
     }
     $balance = $isAr ? $total : 0;
     $saleStmt = $conn->prepare("INSERT INTO tblsales(pos_terminal_id, cashier_user_id, sale_date, sale_type, payment_method_id, ar_customer_id, price, tax_total, total_amount, balance, suki_card_id, suki_card_status, suki_points_balance)
-      VALUES(:terminalId, :cashierId, CURRENT_DATE, :saleType, :paymentMethodId, :customerId, :price, :tax, :total, :balance, :sukiCardId, :sukiStatus, :sukiPoints)
-      RETURNING sale_id");
+      VALUES(:terminalId, :cashierId, CURRENT_DATE, :saleType, :paymentMethodId, :customerId, :price, :tax, :total, :balance, :sukiCardId, :sukiStatus, :sukiPoints)");
     $saleStmt->execute([":terminalId"=>$terminalId, ":cashierId"=>$data['cashierUserId'], ":saleType"=>$data['saleType'], ":paymentMethodId"=>$isAr ? null : $paymentMethodId, ":customerId"=>$customerId, ":price"=>$price, ":tax"=>$tax, ":total"=>$total, ":balance"=>$balance, ":sukiCardId"=>$sukiCardId, ":sukiStatus"=>$sukiStatus, ":sukiPoints"=>$sukiPointsBalance]);
-    $saleId = $saleStmt->fetchColumn();
+    $saleId = (int)$conn->lastInsertId();
     $detailStmt = $conn->prepare("INSERT INTO tblsales_detail(sale_id, product_id, promo_id, quantity, unit_price, discount, promo_discount, line_total, cost_at_sale)
       VALUES(:saleId, :productId, :promoId, :quantity, :unitPrice, :discount, :promoDiscount, :lineTotal, :cost)");
     foreach ($detailRows as $row) {
@@ -376,7 +375,7 @@ function createSale($json) {
       $invStmt = $conn->prepare(
         "INSERT INTO tblar_invoice
           (invoice_number, ar_customer_id, sale_id, created_by_user_id, invoice_date, due_date, invoice_amount, balance, status)
-         VALUES (:number, :customerId, :saleId, :userId, CURRENT_DATE, (CURRENT_DATE + (CAST(:days AS integer) * INTERVAL '1 day'))::date, :amount, :balance, 'Approved')"
+         VALUES (:number, :customerId, :saleId, :userId, CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL CAST(:days AS SIGNED) DAY), :amount, :balance, 'Approved')"
       );
       $invStmt->execute([
         ":number" => $invNumber,
@@ -458,8 +457,7 @@ function holdTransaction($json, $user) {
   
   $stmt = $conn->prepare(
     "INSERT INTO tblheld_transactions(hold_reference, cashier_user_id, customer_label, sale_type, items_json, cart_state_json, created_at)
-     VALUES(:ref, :cashierId, :label, :saleType, :items, :state, CURRENT_TIMESTAMP)
-     RETURNING held_id"
+     VALUES(:ref, :cashierId, :label, :saleType, :items, :state, CURRENT_TIMESTAMP)"
   );
   $stmt->execute([
     ":ref" => $holdRef,
@@ -469,7 +467,7 @@ function holdTransaction($json, $user) {
     ":items" => $itemsJson,
     ":state" => $cartStateJson
   ]);
-  $heldId = (int)$stmt->fetchColumn();
+  $heldId = (int)$conn->lastInsertId();
   return json_encode([
     "returnValue" => 1,
     "heldId" => $heldId,
@@ -573,15 +571,19 @@ function openShift($json, $user) {
 
   $stmt = $conn->prepare(
     "INSERT INTO tblshifts (user_id, terminal_id, opening_cash, opened_at, status)
-     VALUES (:userId, :terminalId, :openingCash, CURRENT_TIMESTAMP, 'open')
-     RETURNING shift_id, user_id, terminal_id, opening_cash, opened_at, status"
+     VALUES (:userId, :terminalId, :openingCash, CURRENT_TIMESTAMP, 'open')"
   );
   $stmt->execute([
     ":userId" => $user['user_id'],
     ":terminalId" => $terminalId,
     ":openingCash" => $openingCash
   ]);
-  $newShift = $stmt->fetch(PDO::FETCH_ASSOC);
+  $newShiftId = (int)$conn->lastInsertId();
+  $newShiftStmt = $conn->prepare(
+    "SELECT shift_id, user_id, terminal_id, opening_cash, opened_at, status FROM tblshifts WHERE shift_id=:shiftId"
+  );
+  $newShiftStmt->execute([":shiftId" => $newShiftId]);
+  $newShift = $newShiftStmt->fetch(PDO::FETCH_ASSOC);
 
   if ($openingCash > 0) {
     $evtStmt = $conn->prepare(
@@ -613,8 +615,7 @@ function recordDrawerEvent($json, $user) {
 
   $stmt = $conn->prepare(
     "INSERT INTO tbldrawer_events (shift_id, event_type, amount, authorized_by, created_at)
-     VALUES (:shiftId, :eventType, :amount, :authorizedBy, CURRENT_TIMESTAMP)
-     RETURNING event_id, shift_id, event_type, amount, created_at"
+     VALUES (:shiftId, :eventType, :amount, :authorizedBy, CURRENT_TIMESTAMP)"
   );
   $stmt->execute([
     ":shiftId" => $shiftId,
@@ -622,7 +623,12 @@ function recordDrawerEvent($json, $user) {
     ":amount" => $amount,
     ":authorizedBy" => $authorizedBy
   ]);
-  $event = $stmt->fetch(PDO::FETCH_ASSOC);
+  $eventId = (int)$conn->lastInsertId();
+  $eventStmt = $conn->prepare(
+    "SELECT event_id, shift_id, event_type, amount, created_at FROM tbldrawer_events WHERE event_id=:eventId"
+  );
+  $eventStmt->execute([":eventId" => $eventId]);
+  $event = $eventStmt->fetch(PDO::FETCH_ASSOC);
 
   return json_encode(["returnValue" => 1, "event" => $event]);
 }
@@ -630,17 +636,17 @@ function recordDrawerEvent($json, $user) {
 $operation = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['operation'] ?? '') : ($_POST['operation'] ?? '');
 $json = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['json'] ?? '') : ($_POST['json'] ?? '');
 switch ($operation) {
-  case "getFormData": $user = requireRoles(["Admin", "Cashier", "Manager"]); echo getFormData($user); break;
-  case "getCreditEligibility": requireRoles(["Admin", "Cashier", "Manager"]); echo getCreditEligibility((int)($_GET['customerId'] ?? 0)); break;
-  case "getAllSales": requireRoles(["Admin", "Cashier", "Manager"]); echo getAllSales(); break;
-  case "getReceipt": requireRoles(["Admin", "Cashier", "Manager"]); echo getReceipt((int)($_GET['saleId'] ?? 0)); break;
-  case "createSale": requireRoles(["Cashier", "Admin", "Manager"]); echo createSale($json); break;
-  case "holdTransaction": $user = requireRoles(["Cashier", "Admin", "Manager"]); echo holdTransaction($json, $user); break;
-  case "getHeldTransactions": requireRoles(["Cashier", "Admin", "Manager"]); echo getHeldTransactions(); break;
-  case "deleteHeldTransaction": requireRoles(["Cashier", "Admin", "Manager"]); echo deleteHeldTransaction((int)($_POST['heldId'] ?? 0)); break;
-  case "getActiveShift": $user = requireRoles(["Cashier", "Admin", "Manager"]); echo getActiveShift($user); break;
-  case "openShift": $user = requireRoles(["Cashier", "Admin", "Manager"]); echo openShift($json, $user); break;
-  case "recordDrawerEvent": $user = requireRoles(["Cashier", "Admin", "Manager"]); echo recordDrawerEvent($json, $user); break;
+  case "getFormData": $user = requireRoles(["Admin", "Cashier", "Manager", "Supervisor"]); echo getFormData($user); break;
+  case "getCreditEligibility": requireRoles(["Admin", "Cashier", "Manager", "Supervisor"]); echo getCreditEligibility((int)($_GET['customerId'] ?? 0)); break;
+  case "getAllSales": requireRoles(["Admin", "Cashier", "Manager", "Supervisor"]); echo getAllSales(); break;
+  case "getReceipt": requireRoles(["Admin", "Cashier", "Manager", "Supervisor"]); echo getReceipt((int)($_GET['saleId'] ?? 0)); break;
+  case "createSale": requireRoles(["Cashier", "Admin", "Manager", "Supervisor"]); echo createSale($json); break;
+  case "holdTransaction": $user = requireRoles(["Cashier", "Admin", "Manager", "Supervisor"]); echo holdTransaction($json, $user); break;
+  case "getHeldTransactions": requireRoles(["Cashier", "Admin", "Manager", "Supervisor"]); echo getHeldTransactions(); break;
+  case "deleteHeldTransaction": requireRoles(["Cashier", "Admin", "Manager", "Supervisor"]); echo deleteHeldTransaction((int)($_POST['heldId'] ?? 0)); break;
+  case "getActiveShift": $user = requireRoles(["Cashier", "Admin", "Manager", "Supervisor"]); echo getActiveShift($user); break;
+  case "openShift": $user = requireRoles(["Cashier", "Admin", "Manager", "Supervisor"]); echo openShift($json, $user); break;
+  case "recordDrawerEvent": $user = requireRoles(["Cashier", "Admin", "Manager", "Supervisor"]); echo recordDrawerEvent($json, $user); break;
   default: http_response_code(400); echo json_encode(["message"=>"Invalid sales operation."]);
 }
 ?>

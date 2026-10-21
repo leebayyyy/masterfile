@@ -22,8 +22,8 @@
         return false;
       }
       $roleConstraint = $allowExistingAdminRole
-        ? "AND role_name IN ('Cashier', 'Accounts Receivable Staff', 'Manager', 'Admin')"
-        : "AND role_name IN ('Cashier', 'Accounts Receivable Staff', 'Manager')";
+        ? "AND role_name IN ('Cashier', 'Accounts Receivable Staff', 'Manager', 'Admin', 'Supervisor')"
+        : "AND role_name IN ('Cashier', 'Accounts Receivable Staff', 'Manager', 'Supervisor')";
       $stmt = $conn->prepare("SELECT role_name FROM tblroles WHERE role_id=:roleId {$roleConstraint}");
       $stmt->execute([":roleId"=>$roleId]);
       $roleName = $stmt->fetchColumn();
@@ -275,7 +275,11 @@
   }
 
   $user = new User();
-  requireRoles(["Admin"]);
+  if (in_array($operation, ["getAllUsers", "getUser"], true)) {
+    requireRoles(["Admin", "Manager", "Supervisor"]);
+  } else {
+    requireRoles(["Admin"]);
+  }
   switch($operation){
     case "getAllUsers":
       echo $user->getAllUsers();

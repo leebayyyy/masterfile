@@ -1,7 +1,7 @@
-import { getSession } from "./auth.js?v=3";
+import { getSession } from "./auth.js?v=20261021";
 import { showToast, showError, showSuccess, showConfirm } from "./swal-helper.js";
 
-const apiUrl = "/api/sales.php";
+const apiUrl = "api/sales.php";
 let products = [];
 let cart = [];
 let currentUser = null;
@@ -23,7 +23,7 @@ let activeDrawerEventType = "float";
 let searchResultIndex = -1;
 let currentSearchResults = [];
 
-document.addEventListener("DOMContentLoaded", () => {
+const initPosRegister = () => {
   // Cashier View Switching Listener (dispatched from page-auth navbar)
   window.addEventListener("pos:switch-view", (e) => {
     switchPosView(e.detail?.view || "view-checkout");
@@ -212,7 +212,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Load Data & Shifts
   loadFormData();
   loadSales();
-});
+};
+
 
 /* ==========================================================================
    Live Clock & Header Info
@@ -503,7 +504,6 @@ const addProductToCart = (product, quantity = 1) => {
   }
   renderCart();
   focusBarcodeInput();
-};
 };
 
 /* ==========================================================================
@@ -2179,7 +2179,7 @@ const handleSupervisorSubmit = async () => {
       })
     );
 
-    const { data } = await axios.post("/api/auth.php?action=verify_supervisor", formData, { withCredentials: true });
+    const { data } = await axios.post("api/auth.php?action=verify_supervisor", formData, { withCredentials: true });
     if (data.returnValue === 1 && data.authorized) {
       bootstrap.Modal.getInstance(document.getElementById("supervisor-modal"))?.hide();
       if (supervisorAuthResolve) {
@@ -2387,3 +2387,9 @@ const openHotkeyHelpModal = () => {
     bootstrap.Modal.getOrCreateInstance(modalEl).show();
   }
 };
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initPosRegister);
+} else {
+  initPosRegister();
+}

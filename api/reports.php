@@ -3,7 +3,7 @@ require_once "auth-lib.php";
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 
-$user = requireRoles(["Admin", "Manager", "Accounts Receivable Staff"]);
+$user = requireRoles(["Admin", "Manager", "Accounts Receivable Staff", "Supervisor"]);
 include "connection-pdo.php";
 $operation = $_GET['operation'] ?? '';
 
@@ -76,7 +76,7 @@ if ($operation === 'summary') {
   $dailySalesStmt = $conn->prepare(
     "SELECT s.sale_id, s.sale_date, s.sale_type, s.total_amount, s.balance,
             COALESCE((SELECT SUM(sd.promo_discount) FROM tblsales_detail sd WHERE sd.sale_id=s.sale_id), 0) AS promotion_discount,
-            (SELECT STRING_AGG(DISTINCT pr.promo_name, ', ' ORDER BY pr.promo_name)
+            (SELECT GROUP_CONCAT(DISTINCT pr.promo_name ORDER BY pr.promo_name SEPARATOR ', ')
              FROM tblsales_detail sd INNER JOIN tblpromo pr ON pr.promo_id=sd.promo_id
              WHERE sd.sale_id=s.sale_id) AS promotions_applied,
             t.terminal_name, CONCAT(u.first_name, ' ', u.last_name) AS cashier,
@@ -112,7 +112,7 @@ if ($operation === 'summary') {
               ELSE 'Current'
             END AS collection_status,
             CASE
-              WHEN i.due_date < CURRENT_DATE THEN (CURRENT_DATE - i.due_date)
+              WHEN i.due_date < CURRENT_DATE THEN DATEDIFF(CURRENT_DATE, i.due_date)
               ELSE 0
             END AS days_overdue
      FROM tblar_invoice i

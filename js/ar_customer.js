@@ -2,7 +2,7 @@ import { updateModal } from "./modules/ar_customer-update.js";
 import { deactivateModal } from "./modules/ar_customer-delete.js";
 import { showToast, showError, showSuccess } from "./swal-helper.js";
 
-const baseApiUrl = "/api";
+const baseApiUrl = "api";
 sessionStorage.setItem("baseAPIUrl", baseApiUrl);
 
 let arCustomerTypeList = [];

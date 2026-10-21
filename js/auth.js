@@ -1,7 +1,7 @@
-const authApiUrl = "/api/auth.php";
-const defaultBaseApiUrl = "/api";
+const authApiUrl = "api/auth.php";
+const defaultBaseApiUrl = "api";
 
-if (!sessionStorage.getItem("baseAPIUrl") || sessionStorage.getItem("baseAPIUrl").includes("localhost") || sessionStorage.getItem("baseAPIUrl").startsWith("http")) {
+if (!sessionStorage.getItem("baseAPIUrl") || sessionStorage.getItem("baseAPIUrl").includes("localhost") || sessionStorage.getItem("baseAPIUrl").startsWith("http") || sessionStorage.getItem("baseAPIUrl").startsWith("/")) {
   sessionStorage.setItem("baseAPIUrl", defaultBaseApiUrl);
 }
 

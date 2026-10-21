@@ -1,4 +1,4 @@
-const reportsUrl = "/api/reports.php";
+const reportsUrl = "api/reports.php";
 
 document.addEventListener("DOMContentLoaded", () => {
   const dateInput = document.getElementById("report-date");

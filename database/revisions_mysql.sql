@@ -49,6 +49,9 @@ UPDATE tblusers SET password_hash = '$2y$10$pNRHO.2Qzos90jlZZBrV1..bVvx3xOBQ4SCR
 -- Pedro (AR Staff backup): pedro / ar123
 UPDATE tblusers SET password_hash = '$2y$10$pNRHO.2Qzos90jlZZBrV1..bVvx3xOBQ4SCRLBdR1GH5Fm0n/hqgK', role = 'ar_staff', role_id = 3 WHERE username = 'pedro';
 
+-- Manager: RC / manager123
+UPDATE tblusers SET password_hash = '$2y$10$roeHGi9SigrTjS2uwmWXIumc4Z7LVUKb8avljfeSqMd8zH8subz6W', role = 'manager', role_id = 4 WHERE username = 'RC';
+
 -- 4. Ensure barcode column on tblproducts
 SET @prod_col_exists = (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'pos_ar_system' AND table_name = 'tblproducts' AND column_name = 'barcode');
 SET @prod_alter_sql = IF(@prod_col_exists = 0, 'ALTER TABLE tblproducts ADD COLUMN barcode VARCHAR(64)', 'SELECT 1');
@@ -116,15 +119,35 @@ CREATE TABLE IF NOT EXISTS tblpayment_allocations (
   INDEX idx_alloc_invoice (invoice_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- 9. Table: tblheld_transactions
+-- 9. Table: tblheld_transactions (layout used by api/sales.php)
+-- Drop the old layout (cart_data/held_at/...) only if it was created by an earlier version of this script.
+SET @held_old = (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'pos_ar_system' AND table_name = 'tblheld_transactions' AND column_name = 'cart_data');
+SET @held_drop_sql = IF(@held_old > 0, 'DROP TABLE tblheld_transactions', 'SELECT 1');
+PREPARE held_stmt FROM @held_drop_sql;
+EXECUTE held_stmt;
+DEALLOCATE PREPARE held_stmt;
+
 CREATE TABLE IF NOT EXISTS tblheld_transactions (
   held_id INT AUTO_INCREMENT PRIMARY KEY,
+  hold_reference VARCHAR(100) NOT NULL,
   cashier_user_id INT NOT NULL,
-  cart_data LONGTEXT NOT NULL,
-  customer_id INT NULL,
-  held_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  resumed_at DATETIME NULL,
-  status VARCHAR(20) DEFAULT 'held',
+  customer_label VARCHAR(255) DEFAULT NULL,
+  sale_type VARCHAR(50) DEFAULT 'Cash',
+  items_json LONGTEXT NOT NULL,
+  cart_state_json LONGTEXT DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_held_cashier (cashier_user_id),
-  INDEX idx_held_status (status)
+  INDEX idx_held_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 10. Table: tblwholesale_prices (used by api/wholesale_price.php)
+CREATE TABLE IF NOT EXISTS tblwholesale_prices (
+  wholesale_price_id INT AUTO_INCREMENT PRIMARY KEY,
+  product_id INT NOT NULL,
+  wholesale_price DECIMAL(10, 2) DEFAULT NULL,
+  price_tier VARCHAR(100) DEFAULT NULL,
+  effective_from DATE DEFAULT NULL,
+  effective_to DATE DEFAULT NULL,
+  INDEX idx_wholesale_prices_product (product_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+

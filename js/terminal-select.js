@@ -1,11 +1,12 @@
-import { getSession } from "./auth.js?v=3";
+import { getSession } from "./auth.js?v=20261021";
 
-const apiUrl = "/api/pos_terminal.php";
+const apiUrl = "api/pos_terminal.php";
 
-document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("terminal-select-form").addEventListener("submit", selectTerminal);
+const initTerminalSelect = () => {
+  document.getElementById("terminal-select-form")?.addEventListener("submit", selectTerminal);
   loadTerminals().catch(showError);
-});
+};
+
 
 const loadTerminals = async () => {
   const session = await getSession();
@@ -54,3 +55,9 @@ const showError = (error) => {
     "Unable to load or select a POS terminal.";
   errorDiv.classList.remove("d-none");
 };
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initTerminalSelect);
+} else {
+  initTerminalSelect();
+}

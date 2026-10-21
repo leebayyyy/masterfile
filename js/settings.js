@@ -1,4 +1,4 @@
-const settingsUrl = "/api/settings.php";
+const settingsUrl = "api/settings.php";
 let settingsData;
 
 document.addEventListener("DOMContentLoaded", () => {
