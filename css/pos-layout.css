@@ -157,20 +157,29 @@ body.pos-body {
   background-color: #f8fafc;
 }
 
-/* Classic POS Inverted Row High-Contrast Selection (Keyboard Cursor) */
+/* Clean POS Active Row High-Contrast Selection (Keyboard Cursor in Cart / Lookups) */
 .pos-cart-table tbody tr.table-active,
-.pos-cart-table tbody tr.pos-row-selected {
-  background-color: #0f172a !important;
-  color: #f8fafc !important;
+.pos-cart-table tbody tr.pos-row-selected,
+#product-search-results tr.table-active,
+#product-search-results tr.pos-row-selected,
+#held-transactions-list tr.table-active,
+#held-transactions-list tr.pos-row-selected {
+  background-color: #dbeafe !important;
+  color: #1e3a8a !important;
   font-weight: 700;
-  outline: 2px solid #0284c7;
-  box-shadow: inset 0 0 0 1px #38bdf8;
+  outline: 2px solid #2563eb !important;
+  outline-offset: -1px;
+  box-shadow: inset 0 0 0 1px #93c5fd !important;
 }
 
 .pos-cart-table tbody tr.table-active td,
-.pos-cart-table tbody tr.pos-row-selected td {
-  background-color: #0f172a !important;
-  color: #f8fafc !important;
+.pos-cart-table tbody tr.pos-row-selected td,
+#product-search-results tr.table-active td,
+#product-search-results tr.pos-row-selected td,
+#held-transactions-list tr.table-active td,
+#held-transactions-list tr.pos-row-selected td {
+  background-color: #dbeafe !important;
+  color: #1e3a8a !important;
 }
 
 .pos-cart-table tbody tr.table-active .text-muted,
@@ -178,37 +187,14 @@ body.pos-body {
 .pos-cart-table tbody tr.table-active .text-primary,
 .pos-cart-table tbody tr.pos-row-selected .text-primary,
 .pos-cart-table tbody tr.table-active .text-success,
-.pos-cart-table tbody tr.pos-row-selected .text-success {
-  color: #38bdf8 !important;
-}
-
-/* Product Lookup & Held List Inverted Highlight */
-#product-search-results tr.table-active,
-#product-search-results tr.pos-row-selected,
-#held-transactions-list tr.table-active,
-#held-transactions-list tr.pos-row-selected {
-  background-color: #0f172a !important;
-  color: #f8fafc !important;
-  font-weight: 700;
-  outline: 2px solid #0284c7;
-  box-shadow: inset 0 0 0 1px #38bdf8;
-}
-
-#product-search-results tr.table-active td,
-#product-search-results tr.pos-row-selected td,
-#held-transactions-list tr.table-active td,
-#held-transactions-list tr.pos-row-selected td {
-  background-color: #0f172a !important;
-  color: #f8fafc !important;
-}
-
+.pos-cart-table tbody tr.pos-row-selected .text-success,
 #product-search-results tr.table-active .text-primary,
 #product-search-results tr.pos-row-selected .text-primary,
 #held-transactions-list tr.table-active .text-primary,
 #held-transactions-list tr.pos-row-selected .text-primary,
 #held-transactions-list tr.table-active .text-muted,
 #held-transactions-list tr.pos-row-selected .text-muted {
-  color: #38bdf8 !important;
+  color: #1d4ed8 !important;
 }
 
 .pos-cart-table .num-cell {
@@ -737,17 +723,32 @@ body.pos-body {
 
 /* ==========================================================================
    High-Visibility POS Spatial Keyboard Focus Indicator (.kb-focus)
-   Classic POS terminal inverted / high-contrast neon ring style
+   Clean, Accessible Blue Highlighting (WCAG 4.5:1 Contrast)
    ========================================================================== */
 .kb-focus {
-  outline: 3px solid #38bdf8 !important;
+  outline: 2.5px solid #2563eb !important;
   outline-offset: 2px !important;
-  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.45), inset 0 0 0 2px #0284c7 !important;
-  background-color: #0f172a !important;
-  color: #38bdf8 !important;
-  border-color: #38bdf8 !important;
-  z-index: 1050 !important;
-  transition: outline 0.06s ease-in-out, box-shadow 0.06s ease-in-out !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.25) !important;
+  border-color: #2563eb !important;
+  transition: outline 0.08s ease-in-out, box-shadow 0.08s ease-in-out !important;
+}
+
+/* Modal dialogs, contents and backdrops must NEVER receive screen-covering focus rings or dark backgrounds */
+.modal,
+.modal.kb-focus,
+.modal-dialog,
+.modal-dialog.kb-focus,
+.modal-content,
+.modal-content.kb-focus,
+.modal-header,
+.modal-body,
+.modal-footer {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.modal-content {
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2) !important;
 }
 
 .pos-keyboard-select {
@@ -795,26 +796,61 @@ body.pos-body {
   outline-offset: -2px;
 }
 
-.kb-focus * {
-  color: #38bdf8 !important;
-}
-
+/* Form inputs & controls on keyboard focus: preserve clean white background & readable dark text */
 input.kb-focus,
 select.kb-focus,
 textarea.kb-focus {
-  background-color: #0f172a !important;
-  color: #38bdf8 !important;
-  border-color: #38bdf8 !important;
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #2563eb !important;
+  outline: 2.5px solid #2563eb !important;
+  outline-offset: 0 !important;
+  box-shadow: 0 0 0 0.25rem rgba(37, 99, 235, 0.25) !important;
 }
 
-label.kb-focus {
-  background-color: #0f172a !important;
-  color: #38bdf8 !important;
-  border-color: #38bdf8 !important;
+/* Prominent barcode input keyboard focus */
+#barcode-input.kb-focus,
+.pos-barcode-input.kb-focus {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #2563eb !important;
+  outline: 3px solid #2563eb !important;
+  outline-offset: 1px !important;
+  box-shadow: 0 0 0 0.3rem rgba(37, 99, 235, 0.3) !important;
 }
 
-tr.kb-focus,
-div.kb-focus {
-  outline: 3px solid #38bdf8 !important;
+/* Buttons on keyboard focus: maintain original button color theme with clean ring */
+button.kb-focus,
+.btn.kb-focus,
+[role="button"].kb-focus {
+  outline: 2.5px solid #2563eb !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.3) !important;
+}
+
+.btn-primary.kb-focus {
+  outline: 2.5px solid #1d4ed8 !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.4) !important;
+}
+
+.btn-success.kb-focus {
+  outline: 2.5px solid #059669 !important;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.4) !important;
+}
+
+.btn-danger.kb-focus {
+  outline: 2.5px solid #dc2626 !important;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.4) !important;
+}
+
+/* Dark navbar buttons keyboard focus */
+.navbar .btn.kb-focus {
+  outline: 2.5px solid #60a5fa !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.4) !important;
+}
+
+tr.kb-focus {
+  outline: 2px solid #2563eb !important;
   outline-offset: -1px !important;
 }

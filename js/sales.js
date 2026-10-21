@@ -142,9 +142,12 @@ const initPosRegister = () => {
     }
   });
 
-  // Beginning Cash Modal Listeners
+  // Beginning Cash & Shift Management Listeners
   document.getElementById("btn-confirm-beginning-cash")?.addEventListener("click", confirmBeginningCash);
   document.getElementById("btn-close-beginning-cash")?.addEventListener("click", closeBeginningCash);
+  document.getElementById("btn-open-beginning-cash")?.addEventListener("click", promptBeginningCash);
+  document.getElementById("pos-shift-badge")?.addEventListener("click", promptBeginningCash);
+  document.getElementById("btn-end-shift")?.addEventListener("click", endActiveShift);
   document.getElementById("beginning-cash-input")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -219,8 +222,8 @@ const initPosRegister = () => {
     }
   });
 
-  // Modal Close Focus Restoration (Returns focus to barcode input)
-  [
+  // Modal Focus Restoration & Clean Transition
+  const allModalIds = [
     "tender-modal",
     "product-search-modal",
     "quantity-modal",
@@ -232,27 +235,74 @@ const initPosRegister = () => {
     "beginning-cash-modal",
     "drawer-event-modal",
     "hotkey-reference-modal"
-  ].forEach((modalId) => {
+  ];
+
+  allModalIds.forEach((modalId) => {
     const el = document.getElementById(modalId);
     el?.addEventListener("hidden.bs.modal", () => {
-      if (modalId === "beginning-cash-modal" && currentShiftId === null) {
-        logoutUser();
+      // Clear any kb-focus from modal elements and container
+      el.querySelectorAll(".kb-focus").forEach((f) => f.classList.remove("kb-focus"));
+      el.classList.remove("kb-focus");
+
+      if (modalId === "beginning-cash-modal" && currentShiftId === null && currentUser?.role_name === "Cashier") {
+        showScanFeedback("Shift is not yet opened. Click 'Beginning Cash' or the shift badge to start shift.", true);
+        const shiftBadge = document.getElementById("pos-shift-badge");
+        if (shiftBadge) setSpatialFocus(shiftBadge);
         return;
       }
+
       const scan = document.getElementById("barcode-input");
-      if (scan) setSpatialFocus(scan);
-      focusBarcodeInput();
+      if (scan && !isAnyModalOpen()) {
+        setSpatialFocus(scan);
+        focusBarcodeInput();
+      }
+    });
+
+    el?.addEventListener("shown.bs.modal", () => {
+      // Never allow modal backdrop or container to retain kb-focus
+      el.classList.remove("kb-focus");
+      const modalDialog = el.querySelector(".modal-dialog");
+      const modalContent = el.querySelector(".modal-content");
+      if (modalDialog) modalDialog.classList.remove("kb-focus");
+      if (modalContent) modalContent.classList.remove("kb-focus");
+
+      const target = el.querySelector("[autofocus]") ||
+                     el.querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled]), button:not([disabled]):not(.btn-close)');
+      if (target) {
+        setSpatialFocus(target);
+        if (typeof target.select === "function") {
+          target.select();
+        }
+      }
     });
   });
 
-  // Focus Synchronization across the DOM
+  // Focus Synchronization across the DOM - only interactive controls receive spatial highlight
+  const isNavigableInteractive = (el) => {
+    if (!el || el === document.body || !el.isConnected) return false;
+    if (el.classList.contains("modal") || el.classList.contains("modal-dialog") || el.classList.contains("modal-content") || el.classList.contains("modal-body")) {
+      return false;
+    }
+    if (el.closest?.(".swal2-container")) return false;
+    const tag = el.tagName;
+    if (["INPUT", "SELECT", "TEXTAREA", "BUTTON", "A"].includes(tag)) return true;
+    if (el.getAttribute("role") === "button" || el.getAttribute("role") === "option" || el.getAttribute("role") === "tab") return true;
+    if (el.id === "cart-table" || el.classList.contains("pos-cart-row")) return true;
+    if (el.hasAttribute("tabindex") && el.getAttribute("tabindex") !== "-1") return true;
+    return false;
+  };
+
   document.addEventListener("focusin", (e) => {
-    if (e.target && e.target !== document.body && !e.target.closest?.(".swal2-container")) {
+    if (isNavigableInteractive(e.target)) {
       document.querySelectorAll(".kb-focus").forEach((el) => {
         if (el !== e.target) el.classList.remove("kb-focus");
       });
       e.target.classList.add("kb-focus");
       currentSpatialFocusEl = e.target;
+    } else {
+      if (e.target && (e.target.classList?.contains("modal") || e.target.closest?.(".modal-content") === e.target)) {
+        e.target.classList?.remove("kb-focus");
+      }
     }
   });
 
@@ -344,8 +394,26 @@ const loadFormData = async () => {
       navTermEl.textContent = data.selectedTerminal?.terminal_name || "Terminal: None";
     }
 
-    // Check shift status for current cashier & terminal (Beginning cash prompt)
-    await checkAndPromptShift();
+    // Check shift status: only Cashier role is prompted for mandatory opening shift & beginning cash
+    if (currentUser?.role_name === "Cashier") {
+      await checkAndPromptShift();
+    } else {
+      // Non-cashier roles (Admin, Manager, Supervisor): display active shift if one exists, but NEVER auto-prompt modal
+      try {
+        const { data: shiftData } = await axios.get(apiUrl, {
+          params: { operation: "getActiveShift" },
+          withCredentials: true
+        });
+        if (shiftData.activeShift && shiftData.activeShift.shift_id) {
+          currentShiftId = Number(shiftData.activeShift.shift_id);
+          updateShiftBadge(currentShiftId, shiftData.activeShift.opening_cash);
+        } else {
+          updateShiftBadge(null, 0);
+        }
+      } catch (e) {
+        // Non-blocking
+      }
+    }
 
     fillSelect("sale_payment_method_id", data.paymentMethods, "payment_method_id", "method_name", "-- SELECT PAYMENT METHOD --");
     fillSelect("ar_customer_id", data.customers, "ar_customer_id", "customer_name", "-- SELECT CUSTOMER --");
@@ -366,8 +434,8 @@ const loadFormData = async () => {
       (p) => `${p.product_id} — ${p.product_name} (₱${Number(p.price || 0).toFixed(2)})`
     );
 
-    // If Cashier and register is closed, auto-open register for fast workflow
-    if (currentUser?.role_name === "Cashier") {
+    // If Cashier and register is closed, auto-open register only if shift is active
+    if (currentUser?.role_name === "Cashier" && currentShiftId !== null) {
       startSale();
     }
 
@@ -1428,6 +1496,7 @@ const isElementVisible = (el) => {
 
 const setSpatialFocus = (element) => {
   if (!element || !document.body.contains(element)) return;
+  if (element.classList.contains("modal") || element.classList.contains("modal-dialog") || element.classList.contains("modal-content")) return;
 
   // Clear previous .kb-focus anywhere on page
   document.querySelectorAll(".kb-focus").forEach((el) => {
@@ -3099,12 +3168,13 @@ const checkAndPromptShift = async () => {
       updateShiftBadge(currentShiftId, data.activeShift.opening_cash);
       focusBarcodeInput();
     } else {
+      currentShiftId = null;
+      updateShiftBadge(null, 0);
       promptBeginningCash();
     }
   } catch (err) {
     console.error("Shift check error:", err);
-    showError("Unable to verify the active shift. You will be returned to login.");
-    await logoutUser();
+    showError("Unable to verify the active shift.");
     throw err;
   }
 };
@@ -3116,13 +3186,35 @@ const closeBeginningCash = () => {
 const promptBeginningCash = () => {
   const modalEl = document.getElementById("beginning-cash-modal");
   if (!modalEl) return;
+
+  const titleEl = document.getElementById("begCashModalLabel");
+  const confirmBtn = document.getElementById("btn-confirm-beginning-cash");
+  const endShiftBtn = document.getElementById("btn-end-shift");
+
+  if (currentShiftId) {
+    if (titleEl) {
+      titleEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-cash-stack me-2" viewBox="0 0 16 16"><path d="M1 3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1zm7 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/><path d="M0 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1zm3 0a2 2 0 0 1-2 2v4a2 2 0 0 1 2 2h10a2 2 0 0 1 2-2V7a2 2 0 0 1-2-2z"/></svg>SHIFT #${currentShiftId}: BEGINNING CASH / FUND`;
+    }
+    if (confirmBtn) confirmBtn.textContent = "UPDATE SHIFT FUND / RESUME [Enter]";
+    if (endShiftBtn) endShiftBtn.classList.remove("d-none");
+  } else {
+    if (titleEl) {
+      titleEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-cash-stack me-2" viewBox="0 0 16 16"><path d="M1 3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1zm7 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/><path d="M0 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1zm3 0a2 2 0 0 1-2 2v4a2 2 0 0 1 2 2h10a2 2 0 0 1 2-2V7a2 2 0 0 1-2-2z"/></svg>OPENING SHIFT: BEGINNING CASH`;
+    }
+    if (confirmBtn) confirmBtn.textContent = "OPEN REGISTER & START SHIFT [Enter]";
+    if (endShiftBtn) endShiftBtn.classList.add("d-none");
+  }
+
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
   const input = document.getElementById("beginning-cash-input");
   setTimeout(() => {
-    input?.focus();
-    input?.select();
-  }, 200);
+    if (input) {
+      setSpatialFocus(input);
+      input.focus();
+      input.select();
+    }
+  }, 150);
 };
 
 const confirmBeginningCash = async () => {
@@ -3144,7 +3236,10 @@ const confirmBeginningCash = async () => {
       currentShiftId = Number(data.shift.shift_id);
       updateShiftBadge(currentShiftId, data.shift.opening_cash);
       bootstrap.Modal.getInstance(document.getElementById("beginning-cash-modal"))?.hide();
-      showScanFeedback(`Shift #${currentShiftId} opened with ₱${amount.toFixed(2)} beginning cash.`);
+      showScanFeedback(`Shift #${currentShiftId} active with ₱${amount.toFixed(2)} beginning cash.`);
+      if (currentUser?.role_name === "Cashier") {
+        startSale();
+      }
       focusBarcodeInput();
     } else {
       showError(data.message || "Failed to open shift.");
@@ -3154,11 +3249,46 @@ const confirmBeginningCash = async () => {
   }
 };
 
+const endActiveShift = async () => {
+  const res = await showConfirm({
+    title: "Close Current Shift?",
+    text: `Are you sure you want to end Shift #${currentShiftId}? You can open a new shift afterwards.`,
+    confirmButtonText: "Yes, End Shift",
+    isDestructive: true
+  });
+  if (!res.isConfirmed) return;
+
+  try {
+    const formData = new FormData();
+    formData.append("operation", "closeShift");
+    const { data } = await axios.post(apiUrl, formData, { withCredentials: true });
+    if (data.returnValue === 1) {
+      currentShiftId = null;
+      updateShiftBadge(null, 0);
+      bootstrap.Modal.getInstance(document.getElementById("beginning-cash-modal"))?.hide();
+      showScanFeedback("Shift closed successfully. Open a new shift to continue transactions.");
+    } else {
+      showError(data.message || "Failed to close shift.");
+    }
+  } catch (err) {
+    showError(err.response?.data?.message || err.message || "Error closing shift.");
+  }
+};
+
 const updateShiftBadge = (shiftId, openingCash) => {
   const shiftBadge = document.getElementById("pos-shift-badge");
   if (shiftBadge) {
-    shiftBadge.textContent = `SHIFT #${shiftId} (FLOAT: ₱${Number(openingCash).toFixed(2)})`;
-    shiftBadge.classList.remove("d-none");
+    if (shiftId) {
+      shiftBadge.textContent = `SHIFT #${shiftId} (FLOAT: ₱${Number(openingCash).toFixed(2)})`;
+      shiftBadge.className = "badge bg-info text-dark border-0 px-2 py-1 fw-bold cursor-pointer";
+      shiftBadge.title = "Click to view shift beginning cash";
+      shiftBadge.classList.remove("d-none");
+    } else {
+      shiftBadge.textContent = "NO ACTIVE SHIFT";
+      shiftBadge.className = "badge bg-warning text-dark border-0 px-2 py-1 fw-bold cursor-pointer";
+      shiftBadge.title = "Click to open shift with beginning cash";
+      shiftBadge.classList.remove("d-none");
+    }
   }
 };
 

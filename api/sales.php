@@ -13,11 +13,12 @@ function getFormData($user) {
     $terminalStmt->execute([":terminalId"=>$_SESSION['pos_terminal_id']]);
     $selectedTerminal = $terminalStmt->fetch(PDO::FETCH_ASSOC) ?: null;
   }
-  if (!$selectedTerminal && in_array(normalizeRoleName($user['role_name']), ['Admin', 'Manager', 'Supervisor'], true)) {
-    $selectedTerminal = $conn->query("SELECT pos_terminal_id, terminal_name FROM tblpos_terminals ORDER BY pos_terminal_id ASC LIMIT 1")->fetch(PDO::FETCH_ASSOC) ?: null;
-  }
-  if ($selectedTerminal && in_array(normalizeRoleName($user['role_name']), ['Admin', 'Manager', 'Supervisor'], true)) {
-    $_SESSION['pos_terminal_id'] = (int)$selectedTerminal['pos_terminal_id'];
+  if (!$selectedTerminal) {
+    $terminalRow = $conn->query("SELECT pos_terminal_id, terminal_name FROM tblpos_terminals ORDER BY pos_terminal_id ASC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    if ($terminalRow) {
+      $selectedTerminal = $terminalRow;
+      $_SESSION['pos_terminal_id'] = (int)$terminalRow['pos_terminal_id'];
+    }
   }
   return json_encode([
     "products" => $conn->query(
@@ -533,6 +534,14 @@ function getActiveShift($user) {
   include "connection-pdo.php";
   $terminalId = $_SESSION['pos_terminal_id'] ?? null;
   if (!$terminalId) {
+    $termStmt = $conn->query("SELECT pos_terminal_id FROM tblpos_terminals ORDER BY pos_terminal_id ASC LIMIT 1");
+    $firstTermId = $termStmt ? $termStmt->fetchColumn() : null;
+    if ($firstTermId) {
+      $terminalId = (int)$firstTermId;
+      $_SESSION['pos_terminal_id'] = $terminalId;
+    }
+  }
+  if (!$terminalId) {
     return json_encode(["returnValue" => 1, "activeShift" => null]);
   }
   $stmt = $conn->prepare(
@@ -546,10 +555,28 @@ function getActiveShift($user) {
   return json_encode(["returnValue" => 1, "activeShift" => $shift]);
 }
 
+function closeShift($user) {
+  include "connection-pdo.php";
+  $stmt = $conn->prepare(
+    "UPDATE tblshifts SET status='closed', closed_at=CURRENT_TIMESTAMP
+     WHERE user_id=:userId AND status='open'"
+  );
+  $stmt->execute([":userId" => $user['user_id']]);
+  return json_encode(["returnValue" => 1, "message" => "Shift closed successfully."]);
+}
+
 function openShift($json, $user) {
   include "connection-pdo.php";
   $data = json_decode($json, true) ?: [];
   $terminalId = $_SESSION['pos_terminal_id'] ?? ($data['terminalId'] ?? null);
+  if (!$terminalId) {
+    $termStmt = $conn->query("SELECT pos_terminal_id FROM tblpos_terminals ORDER BY pos_terminal_id ASC LIMIT 1");
+    $firstTermId = $termStmt ? $termStmt->fetchColumn() : null;
+    if ($firstTermId) {
+      $terminalId = (int)$firstTermId;
+      $_SESSION['pos_terminal_id'] = $terminalId;
+    }
+  }
   if (!$terminalId) {
     http_response_code(422);
     return json_encode(["returnValue" => 0, "message" => "A terminal must be selected before opening a shift."]);
@@ -649,6 +676,7 @@ switch ($operation) {
   case "deleteHeldTransaction": requireRoles(["Cashier", "Admin", "Manager", "Supervisor"]); echo deleteHeldTransaction((int)($_POST['heldId'] ?? 0)); break;
   case "getActiveShift": $user = requireRoles(["Cashier", "Admin", "Manager", "Supervisor"]); echo getActiveShift($user); break;
   case "openShift": $user = requireRoles(["Cashier", "Admin", "Manager", "Supervisor"]); echo openShift($json, $user); break;
+  case "closeShift": $user = requireRoles(["Cashier", "Admin", "Manager", "Supervisor"]); echo closeShift($user); break;
   case "recordDrawerEvent": $user = requireRoles(["Cashier", "Admin", "Manager", "Supervisor"]); echo recordDrawerEvent($json, $user); break;
   default: http_response_code(400); echo json_encode(["message"=>"Invalid sales operation."]);
 }
