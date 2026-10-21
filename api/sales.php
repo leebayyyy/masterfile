@@ -13,8 +13,11 @@ function getFormData($user) {
     $terminalStmt->execute([":terminalId"=>$_SESSION['pos_terminal_id']]);
     $selectedTerminal = $terminalStmt->fetch(PDO::FETCH_ASSOC) ?: null;
   }
-  if (!$selectedTerminal && in_array($user['role_name'], ['Admin', 'Manager'], true)) {
+  if (!$selectedTerminal && in_array(normalizeRoleName($user['role_name']), ['Admin', 'Manager', 'Supervisor'], true)) {
     $selectedTerminal = $conn->query("SELECT pos_terminal_id, terminal_name FROM tblpos_terminals ORDER BY pos_terminal_id ASC LIMIT 1")->fetch(PDO::FETCH_ASSOC) ?: null;
+  }
+  if ($selectedTerminal && in_array(normalizeRoleName($user['role_name']), ['Admin', 'Manager', 'Supervisor'], true)) {
+    $_SESSION['pos_terminal_id'] = (int)$selectedTerminal['pos_terminal_id'];
   }
   return json_encode([
     "products" => $conn->query(

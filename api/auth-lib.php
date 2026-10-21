@@ -5,6 +5,19 @@ function currentUser() {
   return $_SESSION['user'] ?? null;
 }
 
+function normalizeRoleName($roleName) {
+  $normalized = strtolower(str_replace('_', ' ', trim((string)$roleName)));
+  $knownRoles = [
+    'admin' => 'Admin',
+    'cashier' => 'Cashier',
+    'manager' => 'Manager',
+    'supervisor' => 'Supervisor',
+    'accounts receivable staff' => 'Accounts Receivable Staff',
+    'ar staff' => 'Accounts Receivable Staff'
+  ];
+  return $knownRoles[$normalized] ?? trim((string)$roleName);
+}
+
 function requireLogin() {
   $user = currentUser();
   if (!$user) {
@@ -32,6 +45,7 @@ function requireRoles($roles) {
     echo json_encode(["message" => "Your account is inactive or unavailable. Please log in again."]);
     exit;
   }
+  $currentUser['role_name'] = normalizeRoleName($currentUser['role_name']);
   $_SESSION['user'] = $currentUser;
   $user = $currentUser;
   header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");

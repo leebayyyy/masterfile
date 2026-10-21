@@ -733,6 +733,8 @@ body.pos-body {
   #printable-receipt, #printable-receipt * {
     visibility: visible;
   }
+}
+
 /* ==========================================================================
    High-Visibility POS Spatial Keyboard Focus Indicator (.kb-focus)
    Classic POS terminal inverted / high-contrast neon ring style
@@ -746,6 +748,51 @@ body.pos-body {
   border-color: #38bdf8 !important;
   z-index: 1050 !important;
   transition: outline 0.06s ease-in-out, box-shadow 0.06s ease-in-out !important;
+}
+
+.pos-keyboard-select {
+  position: relative;
+}
+
+.pos-keyboard-select > .form-select {
+  padding-right: 2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pos-keyboard-select-menu {
+  position: absolute;
+  z-index: 1080;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 16rem;
+  overflow-y: auto;
+  margin-top: 0.15rem;
+  padding: 0.25rem;
+  border: 1px solid #94a3b8;
+  border-radius: 0.375rem;
+  background: #fff;
+  box-shadow: 0 0.5rem 1rem rgba(15, 23, 42, 0.2);
+}
+
+.pos-keyboard-select-option {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: #1e293b;
+  text-align: left;
+}
+
+.pos-keyboard-select-option:hover,
+.pos-keyboard-select-option.is-highlighted {
+  background: #dbeafe;
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
 }
 
 .kb-focus * {
@@ -771,4 +818,3 @@ div.kb-focus {
   outline: 3px solid #38bdf8 !important;
   outline-offset: -1px !important;
 }
-

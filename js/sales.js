@@ -1,4 +1,4 @@
-import { getSession } from "./auth.js?v=20261021";
+import { getSession, logoutUser } from "./auth.js?v=20261021";
 import { showToast, showError, showSuccess, showConfirm } from "./swal-helper.js";
 
 const apiUrl = "api/sales.php";
@@ -27,9 +27,20 @@ let activePresetIndex = -1;
 let currentLogicalZone = 1;
 let activeSupervisorActionType = "";
 let activeSupervisorTargetRef = "";
+const keyboardDropdowns = new Map();
+let openKeyboardDropdown = null;
 const quickCashPresets = ["exact", "50", "100", "200", "500", "1000"];
 
 const initPosRegister = () => {
+  registerKeyboardDropdown("sale_payment_method_id", "payment-method-control", "payment-method-listbox");
+  registerKeyboardDropdown("suki_card_status", "suki-card-status-control", "suki-card-status-listbox");
+  registerKeyboardDropdown("suki_card_id", "suki-card-control", "suki-card-listbox");
+  document.addEventListener("pointerdown", (event) => {
+    if (openKeyboardDropdown && !openKeyboardDropdown.button.parentElement.contains(event.target)) {
+      closeKeyboardDropdown(openKeyboardDropdown, false);
+    }
+  });
+
   // Cashier View Switching Listener (dispatched from page-auth navbar)
   window.addEventListener("pos:switch-view", (e) => {
     switchPosView(e.detail?.view || "view-checkout");
@@ -70,6 +81,7 @@ const initPosRegister = () => {
   qtyInput?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
+      e.stopPropagation();
       const val = Number(qtyInput.value || 1);
       if (val < 1) qtyInput.value = 1;
       focusBarcodeInput();
@@ -81,6 +93,7 @@ const initPosRegister = () => {
   barcodeInput?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
+      e.stopPropagation();
       handleBarcodeScan();
     }
   });
@@ -131,9 +144,11 @@ const initPosRegister = () => {
 
   // Beginning Cash Modal Listeners
   document.getElementById("btn-confirm-beginning-cash")?.addEventListener("click", confirmBeginningCash);
+  document.getElementById("btn-close-beginning-cash")?.addEventListener("click", closeBeginningCash);
   document.getElementById("beginning-cash-input")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
+      e.stopPropagation();
       confirmBeginningCash();
     }
   });
@@ -220,6 +235,10 @@ const initPosRegister = () => {
   ].forEach((modalId) => {
     const el = document.getElementById(modalId);
     el?.addEventListener("hidden.bs.modal", () => {
+      if (modalId === "beginning-cash-modal" && currentShiftId === null) {
+        logoutUser();
+        return;
+      }
       const scan = document.getElementById("barcode-input");
       if (scan) setSpatialFocus(scan);
       focusBarcodeInput();
@@ -370,6 +389,113 @@ const fillSelect = (id, records, valueKey, labelKey, placeholder, formatter = (r
     option.textContent = formatter(record);
     select.appendChild(option);
   });
+  syncKeyboardDropdown(id);
+};
+
+const registerKeyboardDropdown = (selectId, buttonId, listboxId) => {
+  const select = document.getElementById(selectId);
+  const button = document.getElementById(buttonId);
+  const listbox = document.getElementById(listboxId);
+  if (!select || !button || !listbox) return;
+
+  const dropdown = { select, button, listbox, highlightedIndex: -1 };
+  keyboardDropdowns.set(selectId, dropdown);
+  button.addEventListener("click", () => {
+    if (openKeyboardDropdown === dropdown) {
+      closeKeyboardDropdown(dropdown, true);
+    } else {
+      openKeyboardDropdownList(dropdown);
+    }
+  });
+  select.addEventListener("change", () => syncKeyboardDropdown(selectId));
+  syncKeyboardDropdown(selectId);
+};
+
+const syncKeyboardDropdown = (selectId) => {
+  const dropdown = keyboardDropdowns.get(selectId);
+  if (!dropdown) return;
+  const selectedOption = dropdown.select.selectedOptions[0];
+  dropdown.button.textContent = selectedOption?.textContent || "No options available";
+  dropdown.listbox.replaceChildren();
+
+  Array.from(dropdown.select.options).forEach((option, index) => {
+    const optionButton = document.createElement("button");
+    optionButton.type = "button";
+    optionButton.className = "pos-keyboard-select-option";
+    optionButton.id = `${dropdown.listbox.id}-option-${index}`;
+    optionButton.setAttribute("role", "option");
+    optionButton.tabIndex = -1;
+    optionButton.setAttribute("aria-selected", String(option.selected));
+    optionButton.textContent = option.textContent;
+    optionButton.disabled = option.disabled;
+    optionButton.addEventListener("click", () => {
+      dropdown.select.value = option.value;
+      dropdown.select.dispatchEvent(new Event("change", { bubbles: true }));
+      closeKeyboardDropdown(dropdown, true);
+    });
+    dropdown.listbox.appendChild(optionButton);
+  });
+};
+
+const openKeyboardDropdownList = (dropdown) => {
+  if (openKeyboardDropdown && openKeyboardDropdown !== dropdown) {
+    closeKeyboardDropdown(openKeyboardDropdown, false);
+  }
+  const options = Array.from(dropdown.select.options);
+  if (!options.some((option) => option.value !== "" && !option.disabled)) return;
+
+  openKeyboardDropdown = dropdown;
+  dropdown.highlightedIndex = Math.max(0, options.findIndex((option) => option.selected && !option.disabled));
+  dropdown.listbox.classList.remove("d-none");
+  dropdown.button.setAttribute("aria-expanded", "true");
+  updateKeyboardDropdownHighlight(dropdown);
+};
+
+const updateKeyboardDropdownHighlight = (dropdown) => {
+  const options = Array.from(dropdown.listbox.querySelectorAll('[role="option"]:not(:disabled)'));
+  options.forEach((option, index) => option.classList.toggle("is-highlighted", index === dropdown.highlightedIndex));
+  const highlighted = options[dropdown.highlightedIndex];
+  if (highlighted) dropdown.button.setAttribute("aria-activedescendant", highlighted.id);
+  else dropdown.button.removeAttribute("aria-activedescendant");
+};
+
+const closeKeyboardDropdown = (dropdown, restoreFocus) => {
+  dropdown.listbox.classList.add("d-none");
+  dropdown.button.setAttribute("aria-expanded", "false");
+  dropdown.button.removeAttribute("aria-activedescendant");
+  dropdown.listbox.querySelectorAll(".is-highlighted").forEach((option) => option.classList.remove("is-highlighted"));
+  if (openKeyboardDropdown === dropdown) openKeyboardDropdown = null;
+  if (restoreFocus) setSpatialFocus(dropdown.button);
+};
+
+const handleKeyboardDropdownKey = (event) => {
+  const dropdown = openKeyboardDropdown;
+  if (!dropdown) return false;
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeKeyboardDropdown(dropdown, true);
+    return true;
+  }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const options = Array.from(dropdown.listbox.querySelectorAll('[role="option"]:not(:disabled)'));
+    if (options.length) {
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      dropdown.highlightedIndex = (dropdown.highlightedIndex + direction + options.length) % options.length;
+      updateKeyboardDropdownHighlight(dropdown);
+    }
+    return true;
+  }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    const options = Array.from(dropdown.listbox.querySelectorAll('[role="option"]:not(:disabled)'));
+    const highlighted = options[dropdown.highlightedIndex];
+    if (highlighted) highlighted.click();
+    else closeKeyboardDropdown(dropdown, true);
+    return true;
+  }
+  return false;
 };
 
 const escapeHtml = (value) =>
@@ -1361,10 +1487,10 @@ const getSpatialNavigableElements = () => {
       "#cart-table",
       "#btn-mode-cash",
       "#btn-mode-ar",
-      "#sale_payment_method_id",
+      "#payment-method-control",
       "#ar_customer_id",
-      "#suki_card_status",
-      "#suki_card_id",
+      "#suki-card-status-control",
+      "#suki-card-control",
       "#btn-open-tender",
       "#btn-cancel-sale",
       ".pos-hotkey-dock .pos-hotkey-btn",
@@ -1620,7 +1746,11 @@ const handleGlobalShortcuts = (e) => {
     activeTag === "TEXTAREA"
   );
 
-  if (!isAnyModalOpen() && isPrintable && !isTargetTextInput) {
+  if (openKeyboardDropdown && e.key === "Tab") {
+    closeKeyboardDropdown(openKeyboardDropdown, false);
+  }
+
+  if (!openKeyboardDropdown && !isAnyModalOpen() && isPrintable && !isTargetTextInput) {
     const scanInput = document.getElementById("barcode-input");
     if (scanInput) {
       setSpatialFocus(scanInput);
@@ -1630,6 +1760,8 @@ const handleGlobalShortcuts = (e) => {
       return;
     }
   }
+
+  if (handleKeyboardDropdownKey(e)) return;
 
   // Context 1: Supervisor Authorization Modal is Open
   const supModal = document.getElementById("supervisor-modal");
@@ -1656,9 +1788,23 @@ const handleGlobalShortcuts = (e) => {
   // Context 2: Beginning Cash Modal is Open
   const begModal = document.getElementById("beginning-cash-modal");
   if (begModal && begModal.classList.contains("show")) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeBeginningCash();
+      return;
+    }
+    if (e.key.startsWith("Arrow")) {
+      e.preventDefault();
+      navigateSpatially(e.key);
+      return;
+    }
     if (e.key === "Enter") {
       e.preventDefault();
-      confirmBeginningCash();
+      if (document.activeElement === document.getElementById("btn-close-beginning-cash")) {
+        closeBeginningCash();
+      } else {
+        confirmBeginningCash();
+      }
     }
     return;
   }
@@ -1980,6 +2126,7 @@ const updateSaleTypeFields = () => {
     paymentMethodSelect.required = !isAr;
     if (isAr) paymentMethodSelect.value = "";
   }
+  syncKeyboardDropdown("sale_payment_method_id");
   updateSukiFields();
   refreshCreditEligibility();
 };
@@ -2026,10 +2173,15 @@ const updateSukiFields = () => {
       if (cardCustEl) {
         cardCustEl.textContent = `Linked customer: ${arCustomers.find((c) => String(c.ar_customer_id) === String(card.ar_customer_id))?.customer_name || "Customer"}. Sale records this balance snapshot.`;
       }
-    } else if (cardCustEl) {
-      cardCustEl.textContent = "For an unregistered card, enter the points shown by the customer.";
+    } else {
+      if (pointsInput) pointsInput.value = "";
+      if (cardCustEl) {
+        cardCustEl.textContent = "For an unregistered card, enter the points shown by the customer.";
+      }
     }
   }
+  syncKeyboardDropdown("suki_card_status");
+  syncKeyboardDropdown("suki_card_id");
 };
 
 const updateCreditEligibility = () => {
@@ -2951,8 +3103,14 @@ const checkAndPromptShift = async () => {
     }
   } catch (err) {
     console.error("Shift check error:", err);
-    focusBarcodeInput();
+    showError("Unable to verify the active shift. You will be returned to login.");
+    await logoutUser();
+    throw err;
   }
+};
+
+const closeBeginningCash = () => {
+  bootstrap.Modal.getInstance(document.getElementById("beginning-cash-modal"))?.hide();
 };
 
 const promptBeginningCash = () => {

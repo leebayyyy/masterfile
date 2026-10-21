@@ -40,6 +40,7 @@ function login($json) {
     http_response_code(401);
     return json_encode(["message" => "Invalid username or password."]);
   }
+  $user['role_name'] = normalizeRoleName($user['role_name']);
   session_regenerate_id(true);
   unset($user['password_hash']);
   $_SESSION['user'] = $user;
@@ -70,13 +71,14 @@ function sessionInfo() {
     $stmt->execute([":userId"=>$user['user_id']]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($user) {
+      $user['role_name'] = normalizeRoleName($user['role_name']);
       $_SESSION['user'] = $user;
     } else {
       unset($_SESSION['user']);
     }
   }
   $selectedTerminalId = null;
-  if ($user && $user['role_name'] === 'Cashier' && !empty($_SESSION['pos_terminal_id'])) {
+  if ($user && strtolower(trim($user['role_name'])) === 'cashier' && !empty($_SESSION['pos_terminal_id'])) {
     include "connection-pdo.php";
     $terminalStmt = $conn->prepare(
       "SELECT pos_terminal_id FROM tblpos_terminals WHERE pos_terminal_id=:terminalId"
@@ -87,7 +89,7 @@ function sessionInfo() {
       unset($_SESSION['pos_terminal_id']);
       $selectedTerminalId = null;
     }
-  } elseif (!$user || $user['role_name'] !== 'Cashier') {
+  } elseif (!$user || strtolower(trim($user['role_name'])) !== 'cashier') {
     unset($_SESSION['pos_terminal_id']);
   }
   return json_encode([
@@ -209,7 +211,7 @@ function verifySupervisor($json) {
       "user_id" => (int)$supervisor['user_id'],
       "username" => $supervisor['username'],
       "name" => trim($supervisor['first_name'] . " " . $supervisor['last_name']),
-      "role" => $supervisor['role'] ?: $supervisor['role_name']
+      "role" => normalizeRoleName($supervisor['role'] ?: $supervisor['role_name'])
     ]
   ]);
 }
