@@ -337,6 +337,7 @@ function renderCashierNavbar(nav, currentUser, session) {
 
   const logoutBtn = document.createElement("button");
   logoutBtn.type = "button";
+  logoutBtn.id = "btn-cashier-logout";
   logoutBtn.className = "btn btn-outline-danger btn-sm px-3";
   logoutBtn.textContent = "Logout";
   logoutBtn.addEventListener("click", async () => {

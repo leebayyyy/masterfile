@@ -108,7 +108,14 @@ export const confirmLogout = async () => {
       confirmButtonText: "Yes, Logout",
       cancelButtonText: "Stay Logged In"
     });
-    if (!res.isConfirmed) return;
+    if (!res.isConfirmed) {
+      const scan = document.getElementById("barcode-input");
+      if (scan) {
+        scan.focus();
+        scan.select();
+      }
+      return;
+    }
   }
   await logoutUser();
 };

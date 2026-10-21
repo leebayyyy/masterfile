@@ -9,7 +9,24 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
 
 function login($json) {
   include "connection-pdo.php";
-  $data = json_decode($json, true);
+  $data = [];
+  if (is_array($json)) {
+    $data = $json;
+  } elseif (is_string($json) && trim($json) !== '') {
+    $data = json_decode($json, true) ?: [];
+  }
+  if (empty($data)) {
+    $rawInput = file_get_contents('php://input');
+    if ($rawInput) {
+      $data = json_decode($rawInput, true) ?: [];
+    }
+  }
+  if (empty($data)) {
+    $data = $_POST;
+  }
+  $username = trim($data['username'] ?? '');
+  $password = $data['password'] ?? '';
+
   $stmt = $conn->prepare(
     "SELECT u.user_id, u.username, u.first_name, u.last_name, u.password_hash,
             r.role_id, r.role_name
@@ -17,9 +34,9 @@ function login($json) {
      INNER JOIN tblroles r ON u.role_id = r.role_id
      WHERE LOWER(u.username) = LOWER(:username) AND u.is_active = 1"
   );
-  $stmt->execute([":username" => trim($data['username'] ?? '')]);
+  $stmt->execute([":username" => $username]);
   $user = $stmt->fetch(PDO::FETCH_ASSOC);
-  if (!$user || !$user['password_hash'] || !password_verify($data['password'] ?? '', $user['password_hash'])) {
+  if (!$user || !$user['password_hash'] || !password_verify($password, $user['password_hash'])) {
     http_response_code(401);
     return json_encode(["message" => "Invalid username or password."]);
   }
@@ -102,7 +119,7 @@ function verifySupervisor($json) {
   
   $data = [];
   if ($json) {
-    $data = json_decode($json, true) ?: [];
+    $data = is_array($json) ? $json : (json_decode($json, true) ?: []);
   }
   if (empty($data)) {
     $rawInput = file_get_contents('php://input');
@@ -153,6 +170,19 @@ function verifySupervisor($json) {
   $currentCashier = currentUser();
   $cashierId = $currentCashier ? (int)$currentCashier['user_id'] : null;
 
+  if (!$shiftId && $cashierId) {
+    try {
+      $shiftStmt = $conn->prepare("SELECT shift_id FROM tblcash_shifts WHERE cashier_id = :cid AND closed_at IS NULL ORDER BY shift_id DESC LIMIT 1");
+      $shiftStmt->execute([":cid" => $cashierId]);
+      $activeShift = $shiftStmt->fetch(PDO::FETCH_ASSOC);
+      if ($activeShift) {
+        $shiftId = (int)$activeShift['shift_id'];
+      }
+    } catch (Exception $e) {
+      // ignore
+    }
+  }
+
   try {
     $logStmt = $conn->prepare(
       "INSERT INTO tblauthorization_log (cashier_id, supervisor_id, action_type, target_reference, shift_id, created_at)
@@ -184,10 +214,13 @@ function verifySupervisor($json) {
   ]);
 }
 
-$action = $_GET['action'] ?? ($_POST['action'] ?? '');
-$operation = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['operation'] ?? '') : ($_POST['operation'] ?? '');
+$rawInput = file_get_contents('php://input');
+$bodyJson = $rawInput ? json_decode($rawInput, true) : null;
+
+$action = $_GET['action'] ?? ($_POST['action'] ?? ($bodyJson['action'] ?? ''));
+$operation = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['operation'] ?? '') : ($_POST['operation'] ?? ($bodyJson['operation'] ?? ''));
 $op = $action ?: $operation;
-$json = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['json'] ?? '') : ($_POST['json'] ?? '');
+$json = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['json'] ?? '') : ($_POST['json'] ?? ($bodyJson['json'] ?? $bodyJson ?? ''));
 
 switch ($op) {
   case "login": echo login($json); break;

@@ -157,9 +157,58 @@ body.pos-body {
   background-color: #f8fafc;
 }
 
-.pos-cart-table tbody tr.table-active {
-  background-color: #dbeafe !important;
-  font-weight: 600;
+/* Classic POS Inverted Row High-Contrast Selection (Keyboard Cursor) */
+.pos-cart-table tbody tr.table-active,
+.pos-cart-table tbody tr.pos-row-selected {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  font-weight: 700;
+  outline: 2px solid #0284c7;
+  box-shadow: inset 0 0 0 1px #38bdf8;
+}
+
+.pos-cart-table tbody tr.table-active td,
+.pos-cart-table tbody tr.pos-row-selected td {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+.pos-cart-table tbody tr.table-active .text-muted,
+.pos-cart-table tbody tr.pos-row-selected .text-muted,
+.pos-cart-table tbody tr.table-active .text-primary,
+.pos-cart-table tbody tr.pos-row-selected .text-primary,
+.pos-cart-table tbody tr.table-active .text-success,
+.pos-cart-table tbody tr.pos-row-selected .text-success {
+  color: #38bdf8 !important;
+}
+
+/* Product Lookup & Held List Inverted Highlight */
+#product-search-results tr.table-active,
+#product-search-results tr.pos-row-selected,
+#held-transactions-list tr.table-active,
+#held-transactions-list tr.pos-row-selected {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  font-weight: 700;
+  outline: 2px solid #0284c7;
+  box-shadow: inset 0 0 0 1px #38bdf8;
+}
+
+#product-search-results tr.table-active td,
+#product-search-results tr.pos-row-selected td,
+#held-transactions-list tr.table-active td,
+#held-transactions-list tr.pos-row-selected td {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+#product-search-results tr.table-active .text-primary,
+#product-search-results tr.pos-row-selected .text-primary,
+#held-transactions-list tr.table-active .text-primary,
+#held-transactions-list tr.pos-row-selected .text-primary,
+#held-transactions-list tr.table-active .text-muted,
+#held-transactions-list tr.pos-row-selected .text-muted {
+  color: #38bdf8 !important;
 }
 
 .pos-cart-table .num-cell {
@@ -684,10 +733,42 @@ body.pos-body {
   #printable-receipt, #printable-receipt * {
     visibility: visible;
   }
-  #printable-receipt {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-  }
+/* ==========================================================================
+   High-Visibility POS Spatial Keyboard Focus Indicator (.kb-focus)
+   Classic POS terminal inverted / high-contrast neon ring style
+   ========================================================================== */
+.kb-focus {
+  outline: 3px solid #38bdf8 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.45), inset 0 0 0 2px #0284c7 !important;
+  background-color: #0f172a !important;
+  color: #38bdf8 !important;
+  border-color: #38bdf8 !important;
+  z-index: 1050 !important;
+  transition: outline 0.06s ease-in-out, box-shadow 0.06s ease-in-out !important;
 }
+
+.kb-focus * {
+  color: #38bdf8 !important;
+}
+
+input.kb-focus,
+select.kb-focus,
+textarea.kb-focus {
+  background-color: #0f172a !important;
+  color: #38bdf8 !important;
+  border-color: #38bdf8 !important;
+}
+
+label.kb-focus {
+  background-color: #0f172a !important;
+  color: #38bdf8 !important;
+  border-color: #38bdf8 !important;
+}
+
+tr.kb-focus,
+div.kb-focus {
+  outline: 3px solid #38bdf8 !important;
+  outline-offset: -1px !important;
+}
+

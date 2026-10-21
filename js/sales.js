@@ -22,6 +22,12 @@ let supervisorAuthReject = null;
 let activeDrawerEventType = "float";
 let searchResultIndex = -1;
 let currentSearchResults = [];
+let activeHeldRecordIndex = 0;
+let activePresetIndex = -1;
+let currentLogicalZone = 1;
+let activeSupervisorActionType = "";
+let activeSupervisorTargetRef = "";
+const quickCashPresets = ["exact", "50", "100", "200", "500", "1000"];
 
 const initPosRegister = () => {
   // Cashier View Switching Listener (dispatched from page-auth navbar)
@@ -80,14 +86,14 @@ const initPosRegister = () => {
   });
 
   // Action Buttons & Modals
-  document.getElementById("btn-open-tender")?.addEventListener("click", openTenderModal);
+  document.getElementById("btn-open-tender")?.addEventListener("click", triggerActiveCheckout);
   document.getElementById("btn-submit-tender")?.addEventListener("click", executeCheckout);
   document.getElementById("btn-open-search")?.addEventListener("click", openProductSearchModal);
   document.getElementById("btn-open-qty")?.addEventListener("click", openQuantityModal);
   document.getElementById("btn-confirm-qty")?.addEventListener("click", confirmQuantityOverride);
   document.getElementById("btn-void-item")?.addEventListener("click", voidActiveItem);
   document.getElementById("btn-void-sale")?.addEventListener("click", requestVoidTransaction);
-  document.getElementById("btn-hold-sale")?.addEventListener("click", openHoldModal);
+  document.getElementById("btn-hold-sale")?.addEventListener("click", triggerHoldTransaction);
   document.getElementById("btn-confirm-hold")?.addEventListener("click", executeHold);
   document.getElementById("btn-resume-sale")?.addEventListener("click", openResumeModal);
 
@@ -99,13 +105,11 @@ const initPosRegister = () => {
   document.getElementById("btn-hk-void-trans")?.addEventListener("click", requestVoidTransaction);
   document.getElementById("btn-hk-float")?.addEventListener("click", openFloatModal);
   document.getElementById("btn-hk-lift")?.addEventListener("click", openLiftModal);
-  document.getElementById("btn-hk-hold")?.addEventListener("click", openHoldModal);
-  document.getElementById("btn-hk-tender")?.addEventListener("click", openTenderModal);
+  document.getElementById("btn-hk-ar")?.addEventListener("click", triggerArCreditSale);
+  document.getElementById("btn-hk-tender")?.addEventListener("click", triggerCashTender);
   document.getElementById("btn-hk-resume")?.addEventListener("click", openResumeModal);
-  document.getElementById("btn-hk-complete")?.addEventListener("click", () => {
-    if (cart.length > 0) openTenderModal();
-    else showScanFeedback("Cart is empty. Scan items first.", true);
-  });
+  document.getElementById("btn-hk-hold")?.addEventListener("click", triggerHoldTransaction);
+  document.getElementById("btn-hk-complete")?.addEventListener("click", triggerActiveCheckout);
   document.getElementById("btn-hk-cancel")?.addEventListener("click", requestVoidTransaction);
 
   // Supervisor Modal Listeners
@@ -183,6 +187,23 @@ const initPosRegister = () => {
     btn.addEventListener("click", () => handleQuickCashPreset(btn.dataset.preset));
   });
 
+  // Navigation & Mode Controls
+  document.getElementById("btn-focus-qty")?.addEventListener("click", focusQuantityInput);
+  document.getElementById("btn-mode-cash")?.addEventListener("click", () => setSaleMode("Cash"));
+  document.getElementById("btn-mode-ar")?.addEventListener("click", () => setSaleMode("AR"));
+
+  document.getElementById("nav-tab-checkout")?.addEventListener("click", () => switchPosView("view-checkout"));
+  document.getElementById("nav-tab-recent")?.addEventListener("click", () => switchPosView("view-recent-sales"));
+  document.getElementById("nav-tab-receipts")?.addEventListener("click", () => switchPosView("view-receipts"));
+  document.getElementById("btn-cashier-logout")?.addEventListener("click", () => confirmLogout());
+
+  window.addEventListener("pos:switch-view", (e) => {
+    const viewId = e.detail?.view;
+    if (viewId) {
+      switchPosView(viewId);
+    }
+  });
+
   // Modal Close Focus Restoration (Returns focus to barcode input)
   [
     "tender-modal",
@@ -199,8 +220,26 @@ const initPosRegister = () => {
   ].forEach((modalId) => {
     const el = document.getElementById(modalId);
     el?.addEventListener("hidden.bs.modal", () => {
+      const scan = document.getElementById("barcode-input");
+      if (scan) setSpatialFocus(scan);
       focusBarcodeInput();
     });
+  });
+
+  // Focus Synchronization across the DOM
+  document.addEventListener("focusin", (e) => {
+    if (e.target && e.target !== document.body && !e.target.closest?.(".swal2-container")) {
+      document.querySelectorAll(".kb-focus").forEach((el) => {
+        if (el !== e.target) el.classList.remove("kb-focus");
+      });
+      e.target.classList.add("kb-focus");
+      currentSpatialFocusEl = e.target;
+    }
+  });
+
+  window.addEventListener("focus", ensureFocusNeverLost);
+  document.addEventListener("focusout", () => {
+    setTimeout(ensureFocusNeverLost, 50);
   });
 
   // Global Keyboard Navigation
@@ -234,7 +273,7 @@ const updateModeBadge = () => {
   const modeBadge = document.getElementById("pos-mode-badge");
   const isAr = document.getElementById("sale_type")?.value === "AR";
   if (modeBadge) {
-    modeBadge.textContent = isAr ? "MODE: AR CREDIT (F9)" : "MODE: CASH (F3)";
+    modeBadge.textContent = isAr ? "MODE: AR CREDIT (F8)" : "MODE: CASH (F9)";
     modeBadge.className = `badge ${isAr ? "bg-warning text-dark" : "bg-success"}`;
   }
 };
@@ -388,6 +427,7 @@ const focusBarcodeInput = () => {
   setTimeout(() => {
     const input = document.getElementById("barcode-input");
     if (input && !isAnyModalOpen()) {
+      setSpatialFocus(input);
       input.focus();
       input.select();
     }
@@ -410,6 +450,7 @@ const showScanFeedback = (msg, isError = false) => {
 const focusQuantityInput = () => {
   const qtyInput = document.getElementById("quantity");
   if (qtyInput) {
+    setSpatialFocus(qtyInput);
     qtyInput.focus();
     qtyInput.select();
   }
@@ -560,7 +601,7 @@ const renderProductSearchResults = (items) => {
       const isSelected = idx === searchResultIndex;
       const barcodeDisplay = p.barcode || `0000000${p.product_id}`.slice(-8);
       return `
-        <tr class="${isSelected ? "table-active" : ""}" data-result-index="${idx}">
+        <tr class="${isSelected ? "table-active pos-row-selected" : ""}" data-result-index="${idx}">
           <td class="font-monospace fw-bold text-primary">${escapeHtml(barcodeDisplay)}</td>
           <td class="fw-semibold">${escapeHtml(p.product_name)}</td>
           <td class="text-end font-monospace">₱${Number(p.price).toFixed(2)}</td>
@@ -572,6 +613,9 @@ const renderProductSearchResults = (items) => {
         </tr>`;
     })
     .join("");
+
+  const activeRow = tbody.querySelector(`tr[data-result-index="${searchResultIndex}"]`);
+  activeRow?.scrollIntoView({ block: "nearest" });
 
   tbody.querySelectorAll("tr").forEach((row) => {
     row.addEventListener("click", () => {
@@ -807,7 +851,7 @@ const renderCart = () => {
                 const promoText = promoDisc > 0 ? `-₱${promoDisc.toFixed(2)}` : "-";
                 const promoBadge = promoDisc > 0 ? `<br><small class="text-success fw-semibold font-monospace">${escapeHtml(item.promoName || "Promo")} (${item.promoRate}% off)</small>` : "";
                 return `
-                  <tr class="${isActive ? "table-active" : ""}" data-row-index="${index}">
+                  <tr class="${isActive ? "table-active pos-row-selected" : ""}" data-row-index="${index}">
                     <td class="num-cell text-muted">${index + 1}</td>
                     <td class="fw-semibold">
                       ${escapeHtml(item.productName)}${promoBadge}
@@ -819,7 +863,7 @@ const renderCart = () => {
                     <td class="text-end num-cell text-success font-monospace row-promo-discount">${promoText}</td>
                     <td class="text-end num-cell fw-bold row-line-total">₱${lineTotal.toFixed(2)}</td>
                     <td class="text-center">
-                      <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 remove-item-btn" data-index="${index}" title="Void item [F4] (Supervisor Override)">
+                      <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 remove-item-btn" data-index="${index}" title="Void item [F4] (Supervisor Override)" tabindex="-1">
                         &times;
                       </button>
                     </td>
@@ -828,6 +872,9 @@ const renderCart = () => {
               .join("")}
           </tbody>
         </table>`;
+
+      const activeCartRow = tableContainer.querySelector(`tr[data-row-index="${activeCartIndex}"]`);
+      activeCartRow?.scrollIntoView({ block: "nearest" });
 
       // Row Selection Click
       tableContainer.querySelectorAll("tbody tr").forEach((row) => {
@@ -885,6 +932,87 @@ const renderCart = () => {
 };
 
 /* ==========================================================================
+   Cash Tender [F9] vs AR Credit [F8] Actions
+   ========================================================================== */
+const triggerCashTender = () => {
+  if (!cart.length) {
+    showScanFeedback("Cannot tender an empty cart. Scan items first.", true);
+    return;
+  }
+  // Enforce CASH mode on F9 tender
+  setSaleMode("Cash");
+  openTenderModal();
+};
+
+const triggerArCreditSale = () => {
+  if (!cart.length) {
+    showScanFeedback("Cannot tender an empty cart. Scan items first.", true);
+    return;
+  }
+  setSaleMode("AR");
+  const custSelect = document.getElementById("ar_customer_id");
+  if (!custSelect?.value) {
+    showScanFeedback("AR Credit mode: Please select an AR Customer first.", true);
+    custSelect?.focus();
+    return;
+  }
+
+  const creditCheck = updateCreditEligibility();
+  if (!creditCheck?.eligible) {
+    showError("This customer does not have enough available credit for this sale.");
+    return;
+  }
+
+  openTenderModal();
+};
+
+const triggerActiveCheckout = () => {
+  if (!cart.length) {
+    showScanFeedback("Cannot tender an empty cart. Scan items first.", true);
+    return;
+  }
+  const isAr = document.getElementById("sale_type")?.value === "AR";
+  if (isAr) {
+    triggerArCreditSale();
+  } else {
+    triggerCashTender();
+  }
+};
+
+const cycleRegisterLogicalZone = (direction) => {
+  currentLogicalZone = currentLogicalZone + direction;
+  if (currentLogicalZone > 3) currentLogicalZone = 1;
+  if (currentLogicalZone < 1) currentLogicalZone = 3;
+
+  if (currentLogicalZone === 1) {
+    const scanInput = document.getElementById("barcode-input");
+    if (scanInput) {
+      scanInput.focus();
+      scanInput.select();
+    }
+    showScanFeedback("Zone 1: Barcode Scanner");
+  } else if (currentLogicalZone === 2) {
+    const cartWrapper = document.getElementById("cart-table");
+    if (cartWrapper) {
+      cartWrapper.focus();
+    }
+    if (cart.length > 0) {
+      if (activeCartIndex < 0) activeCartIndex = 0;
+      renderCart();
+      showScanFeedback(`Zone 2: Cart Lines (${cart.length} items, use ↑/↓ to navigate)`);
+    } else {
+      showScanFeedback("Zone 2: Cart (Empty)");
+    }
+  } else if (currentLogicalZone === 3) {
+    const tenderBtn = document.getElementById("btn-open-tender");
+    if (tenderBtn) {
+      tenderBtn.focus();
+    }
+    showScanFeedback("Zone 3: Checkout Actions [F9 Cash / F8 AR Credit / F12 Complete]");
+  }
+};
+
+/* ==========================================================================
    Tender Modal & Live Sukli (Change) Calculator
    ========================================================================== */
 const openTenderModal = () => {
@@ -911,17 +1039,69 @@ const openTenderModal = () => {
     modalTotalEl.textContent = `PHP ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 
+  // Reset Presets visual highlight
+  activePresetIndex = -1;
+  document.querySelectorAll(".pos-quick-cash-btn").forEach((btn) => {
+    btn.classList.remove("btn-primary", "text-white");
+    btn.classList.add("btn-outline-secondary");
+  });
+
   // Toggle AR vs Cash section
   const cashSec = document.getElementById("tender-cash-section");
   const arSec = document.getElementById("tender-ar-section");
   const tenderCashInput = document.getElementById("tender-cash-input");
+  const submitBtn = document.getElementById("btn-submit-tender");
 
   if (cashSec) cashSec.classList.toggle("d-none", isAr);
   if (arSec) arSec.classList.toggle("d-none", !isAr);
 
-  if (!isAr && tenderCashInput) {
-    tenderCashInput.value = "";
-    updateSukliCalculator();
+  if (isAr) {
+    const custSelect = document.getElementById("ar_customer_id");
+    const customer = arCustomers.find((c) => String(c.ar_customer_id) === custSelect?.value);
+    const balance = Number(customer?.current_balance || 0);
+    const limit = Number(customer?.credit_limit || 0);
+    const availBefore = Math.max(0, limit - balance);
+    const remainAfter = Math.max(0, availBefore - grandTotal);
+
+    if (arSec) {
+      arSec.innerHTML = `
+        <div class="card p-3 bg-light border shadow-sm">
+          <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted fw-semibold">AR Customer:</span>
+            <strong class="text-dark">${escapeHtml(customer?.customer_name || "Customer")}</strong>
+          </div>
+          <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted">Credit Limit:</span>
+            <span class="font-monospace fw-bold">₱${limit.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted">Current Balance:</span>
+            <span class="font-monospace text-danger fw-bold">₱${balance.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted">Available Credit (Before):</span>
+            <span class="font-monospace text-success fw-bold">₱${availBefore.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+          </div>
+          <hr class="my-2" />
+          <div class="d-flex justify-content-between">
+            <span class="fw-bold">Available Credit (After Sale):</span>
+            <span class="font-monospace text-primary fw-bold fs-6">₱${remainAfter.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+          </div>
+        </div>
+      `;
+    }
+    if (submitBtn) {
+      submitBtn.textContent = "CONFIRM AR CREDIT SALE [Enter / F12]";
+      submitBtn.disabled = false;
+    }
+  } else {
+    if (tenderCashInput) {
+      tenderCashInput.value = "";
+      updateSukliCalculator();
+    }
+    if (submitBtn) {
+      submitBtn.textContent = "COMPLETE SALE [Enter / F12]";
+    }
   }
 
   const modalEl = document.getElementById("tender-modal");
@@ -932,6 +1112,10 @@ const openTenderModal = () => {
     setTimeout(() => {
       tenderCashInput.focus();
       tenderCashInput.select();
+    }, 150);
+  } else if (isAr && submitBtn) {
+    setTimeout(() => {
+      submitBtn.focus();
     }, 150);
   }
 };
@@ -963,7 +1147,7 @@ const updateSukliCalculator = () => {
   } else {
     if (sukliAmountEl) {
       const short = (grandTotal - tendered).toFixed(2);
-      sukliAmountEl.textContent = `Short: -P${short}`;
+      sukliAmountEl.textContent = `Short: -₱${short}`;
       sukliAmountEl.className = "pos-sukli-amount insufficient";
     }
     if (sukliBox) {
@@ -973,10 +1157,26 @@ const updateSukliCalculator = () => {
   }
 };
 
+const cycleQuickCashPreset = (direction) => {
+  const isAr = document.getElementById("sale_type")?.value === "AR";
+  if (isAr) return;
+
+  if (activePresetIndex === -1) {
+    activePresetIndex = direction > 0 ? 0 : quickCashPresets.length - 1;
+  } else {
+    activePresetIndex = (activePresetIndex + direction + quickCashPresets.length) % quickCashPresets.length;
+  }
+
+  const preset = quickCashPresets[activePresetIndex];
+  handleQuickCashPreset(preset);
+};
+
 const handleQuickCashPreset = (preset) => {
   const grandTotal = Number(document.getElementById("total-amount")?.value || 0);
   const tenderCashInput = document.getElementById("tender-cash-input");
   if (!tenderCashInput) return;
+
+  activePresetIndex = quickCashPresets.indexOf(preset);
 
   if (preset === "exact") {
     tenderCashInput.value = grandTotal.toFixed(2);
@@ -985,6 +1185,13 @@ const handleQuickCashPreset = (preset) => {
   }
   updateSukliCalculator();
   tenderCashInput.focus();
+
+  document.querySelectorAll(".pos-quick-cash-btn").forEach((btn) => {
+    const isThisPreset = btn.dataset.preset === preset;
+    btn.classList.toggle("btn-primary", isThisPreset);
+    btn.classList.toggle("text-white", isThisPreset);
+    btn.classList.toggle("btn-outline-secondary", !isThisPreset);
+  });
 };
 
 /* ==========================================================================
@@ -1079,12 +1286,349 @@ const executeCheckout = async () => {
 };
 
 /* ==========================================================================
+   2D Spatial Arrow-Key Navigation Architecture
+   ========================================================================== */
+let currentSpatialFocusEl = null;
+
+const isElementVisible = (el) => {
+  if (!el || !el.isConnected) return false;
+  if (el.disabled) return false;
+  if (el.closest(".d-none") || el.closest('[style*="display: none"]')) return false;
+  const style = window.getComputedStyle(el);
+  if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+};
+
+const setSpatialFocus = (element) => {
+  if (!element || !document.body.contains(element)) return;
+
+  // Clear previous .kb-focus anywhere on page
+  document.querySelectorAll(".kb-focus").forEach((el) => {
+    el.classList.remove("kb-focus");
+  });
+
+  currentSpatialFocusEl = element;
+  element.classList.add("kb-focus");
+
+  if (document.activeElement !== element) {
+    element.focus();
+  }
+
+  if (typeof element.scrollIntoView === "function") {
+    element.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+};
+
+const ensureFocusNeverLost = () => {
+  if (isAnyModalOpen() || document.querySelector(".swal2-container")) return;
+  if (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) {
+    const scan = document.getElementById("barcode-input");
+    if (scan) {
+      setSpatialFocus(scan);
+    }
+  } else if (!document.querySelector(".kb-focus")) {
+    setSpatialFocus(document.activeElement);
+  }
+};
+
+const getSpatialNavigableElements = () => {
+  const openModal = document.querySelector(".modal.show");
+  if (openModal) {
+    return Array.from(
+      openModal.querySelectorAll(
+        'button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), a[href]:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter(isElementVisible);
+  }
+
+  const activeView = document.querySelector(".pos-view:not(.d-none)") || document.getElementById("view-checkout");
+  const candidates = [];
+
+  // Navbar controls
+  document.querySelectorAll(".navbar button:not([disabled]), .navbar a:not([disabled])").forEach((el) => {
+    if (isElementVisible(el)) candidates.push(el);
+  });
+
+  if (activeView) {
+    const keySelectors = [
+      "#btn-focus-qty",
+      "#quantity",
+      "#barcode-input",
+      "#btn-open-search",
+      "#btn-void-item",
+      "#btn-void-trans",
+      "#cart-table",
+      "#btn-mode-cash",
+      "#btn-mode-ar",
+      "#sale_payment_method_id",
+      "#ar_customer_id",
+      "#suki_card_status",
+      "#suki_card_id",
+      "#btn-open-tender",
+      "#btn-cancel-sale",
+      ".pos-hotkey-dock .pos-hotkey-btn",
+      "#sales-search-filter",
+      "#btn-refresh-sales",
+      "#receipt-lookup-id",
+      "#btn-reprint-receipt"
+    ];
+
+    keySelectors.forEach((sel) => {
+      document.querySelectorAll(sel).forEach((el) => {
+        if (isElementVisible(el) && !candidates.includes(el)) {
+          candidates.push(el);
+        }
+      });
+    });
+
+    activeView
+      .querySelectorAll('button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), [role="button"]:not([disabled])')
+      .forEach((el) => {
+        if (isElementVisible(el) && !candidates.includes(el)) {
+          candidates.push(el);
+        }
+      });
+  }
+
+  return candidates;
+};
+
+const navigateSpatially = (direction) => {
+  const current = currentSpatialFocusEl || document.activeElement;
+  if (!current || !document.body.contains(current) || current === document.body) {
+    const scan = document.getElementById("barcode-input");
+    if (scan) setSpatialFocus(scan);
+    return;
+  }
+
+  // Cart internal navigation
+  if (current === document.getElementById("cart-table") || current.closest("#cart-table")) {
+    if (direction === "ArrowDown") {
+      if (cart.length > 0) {
+        if (activeCartIndex < cart.length - 1) {
+          activeCartIndex++;
+          renderCart();
+          setSpatialFocus(document.getElementById("cart-table"));
+          return;
+        }
+      }
+    } else if (direction === "ArrowUp") {
+      if (cart.length > 0) {
+        if (activeCartIndex > 0) {
+          activeCartIndex--;
+          renderCart();
+          setSpatialFocus(document.getElementById("cart-table"));
+          return;
+        }
+      }
+    }
+  }
+
+  const candidates = getSpatialNavigableElements();
+  const rA = current.getBoundingClientRect();
+  const cxA = rA.left + rA.width / 2;
+  const cyA = rA.top + rA.height / 2;
+
+  let bestCandidate = null;
+  let minScore = Infinity;
+
+  for (const candidate of candidates) {
+    if (candidate === current) continue;
+    if (!isElementVisible(candidate)) continue;
+
+    const rB = candidate.getBoundingClientRect();
+    const cxB = rB.left + rB.width / 2;
+    const cyB = rB.top + rB.height / 2;
+
+    let isValid = false;
+    let primaryDist = 0;
+    let secondaryDist = 0;
+    let isCrossOverlapping = false;
+
+    switch (direction) {
+      case "ArrowRight":
+        if (cxB > cxA + 3 || rB.left >= rA.right - 2) {
+          isValid = true;
+          primaryDist = Math.max(0, rB.left - rA.right);
+          secondaryDist = Math.abs(cyB - cyA);
+          isCrossOverlapping = (rB.bottom > rA.top + 2 && rB.top < rA.bottom - 2);
+        }
+        break;
+
+      case "ArrowLeft":
+        if (cxB < cxA - 3 || rB.right <= rA.left + 2) {
+          isValid = true;
+          primaryDist = Math.max(0, rA.left - rB.right);
+          secondaryDist = Math.abs(cyB - cyA);
+          isCrossOverlapping = (rB.bottom > rA.top + 2 && rB.top < rA.bottom - 2);
+        }
+        break;
+
+      case "ArrowDown":
+        if (cyB > cyA + 3 || rB.top >= rA.bottom - 2) {
+          isValid = true;
+          primaryDist = Math.max(0, rB.top - rA.bottom);
+          secondaryDist = Math.abs(cxB - cxA);
+          isCrossOverlapping = (rB.right > rA.left + 2 && rB.left < rA.right - 2);
+        }
+        break;
+
+      case "ArrowUp":
+        if (cyB < cyA - 3 || rB.bottom <= rA.top + 2) {
+          isValid = true;
+          primaryDist = Math.max(0, rA.top - rB.bottom);
+          secondaryDist = Math.abs(cxB - cxA);
+          isCrossOverlapping = (rB.right > rA.left + 2 && rB.left < rA.right - 2);
+        }
+        break;
+    }
+
+    if (!isValid) continue;
+
+    const crossWeight = isCrossOverlapping ? 0.35 : 2.5;
+    const score = primaryDist + secondaryDist * crossWeight;
+
+    if (score < minScore) {
+      minScore = score;
+      bestCandidate = candidate;
+    }
+  }
+
+  if (bestCandidate) {
+    setSpatialFocus(bestCandidate);
+  }
+};
+
+const activateFocusedControl = (e) => {
+  const target = currentSpatialFocusEl || document.activeElement;
+  if (!target) return;
+
+  if (target === document.getElementById("barcode-input")) {
+    e.preventDefault();
+    handleBarcodeScan();
+    return;
+  }
+
+  if (target === document.getElementById("quantity")) {
+    e.preventDefault();
+    const scan = document.getElementById("barcode-input");
+    if (scan) setSpatialFocus(scan);
+    return;
+  }
+
+  if (target.id === "btn-focus-qty") {
+    e.preventDefault();
+    focusQuantityInput();
+    return;
+  }
+
+  if (target.id === "btn-mode-cash") {
+    e.preventDefault();
+    setSaleMode("Cash");
+    showScanFeedback("Switched to CASH Mode (F9)");
+    return;
+  }
+
+  if (target.id === "btn-mode-ar") {
+    e.preventDefault();
+    setSaleMode("AR");
+    showScanFeedback("Switched to AR CREDIT Mode (F8)");
+    return;
+  }
+
+  if (target.id === "sale_payment_method_id") {
+    const select = target;
+    if (select.options.length > 1) {
+      e.preventDefault();
+      let nextIndex = (select.selectedIndex + 1) % select.options.length;
+      if (nextIndex === 0 && select.options.length > 1) nextIndex = 1;
+      select.selectedIndex = nextIndex;
+      select.dispatchEvent(new Event("change"));
+      showScanFeedback(`Payment Method: ${select.options[nextIndex].text}`);
+    }
+    return;
+  }
+
+  if (target.id === "suki_card_status") {
+    e.preventDefault();
+    target.value = target.value === "Has" ? "None" : "Has";
+    target.dispatchEvent(new Event("change"));
+    showScanFeedback(`SUKI Card: ${target.value === "Has" ? "Has Card" : "None"}`);
+    return;
+  }
+
+  if (target.id === "btn-open-tender") {
+    e.preventDefault();
+    triggerActiveCheckout();
+    return;
+  }
+
+  if (target.id === "btn-cancel-sale") {
+    e.preventDefault();
+    requestClearCart();
+    return;
+  }
+
+  if (target.id === "btn-cashier-logout" || target.id === "btn-topbar-logout") {
+    e.preventDefault();
+    confirmLogout();
+    return;
+  }
+
+  if (target.id === "nav-tab-checkout") {
+    e.preventDefault();
+    switchPosView("view-checkout");
+    return;
+  }
+
+  if (target.id === "nav-tab-recent") {
+    e.preventDefault();
+    switchPosView("view-recent-sales");
+    return;
+  }
+
+  if (target.id === "nav-tab-receipts") {
+    e.preventDefault();
+    switchPosView("view-receipts");
+    return;
+  }
+
+  if (typeof target.click === "function") {
+    e.preventDefault();
+    target.click();
+    return;
+  }
+};
+
+/* ==========================================================================
    Global Keyboard Handler Architecture (Context-Aware Single Dispatcher)
    ========================================================================== */
 const handleGlobalShortcuts = (e) => {
   // Prevent ALL Function key browser defaults (Chrome kiosk safety)
   if (/^F[1-9]$|^F1[0-2]$/.test(e.key)) {
     e.preventDefault();
+  }
+
+  // Barcode / Scanner typing redirection:
+  // If user types alphanumeric characters while focus is on a button or container,
+  // redirect immediately to the scan field without triggering button actions.
+  const isPrintable = e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey && e.key !== " ";
+  const activeTag = document.activeElement?.tagName;
+  const isTargetTextInput = document.activeElement && (
+    (activeTag === "INPUT" && document.activeElement.type !== "radio" && document.activeElement.type !== "checkbox") ||
+    activeTag === "TEXTAREA"
+  );
+
+  if (!isAnyModalOpen() && isPrintable && !isTargetTextInput) {
+    const scanInput = document.getElementById("barcode-input");
+    if (scanInput) {
+      setSpatialFocus(scanInput);
+      scanInput.focus();
+      scanInput.value += e.key;
+      e.preventDefault();
+      return;
+    }
   }
 
   // Context 1: Supervisor Authorization Modal is Open
@@ -1193,8 +1737,26 @@ const handleGlobalShortcuts = (e) => {
   if (tenderModal && tenderModal.classList.contains("show")) {
     if (e.key === "Escape") {
       e.preventDefault();
+      const isAr = document.getElementById("sale_type")?.value === "AR";
+      const tenderCashInput = document.getElementById("tender-cash-input");
+      const tendered = Number(tenderCashInput?.value || 0);
+      if (!isAr && tendered > 0) {
+        if (!confirm("Tender amount has been entered. Discard payment and return to register?")) {
+          return;
+        }
+      }
       bootstrap.Modal.getInstance(tenderModal)?.hide();
       focusBarcodeInput();
+      return;
+    }
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      cycleQuickCashPreset(1);
+      return;
+    }
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      cycleQuickCashPreset(-1);
       return;
     }
     if (e.key === "Enter" || e.key === "F12") {
@@ -1205,9 +1767,79 @@ const handleGlobalShortcuts = (e) => {
     return;
   }
 
-  // Context 7: Any other modal open (e.g. Hotkey Help, Clear Cart, Receipt)
-  if (isAnyModalOpen()) {
+  // Context 7: Resume Held Transaction Modal is Open
+  const resumeModal = document.getElementById("resume-transaction-modal");
+  if (resumeModal && resumeModal.classList.contains("show")) {
     if (e.key === "Escape") {
+      e.preventDefault();
+      bootstrap.Modal.getInstance(resumeModal)?.hide();
+      focusBarcodeInput();
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (allHeldTransactions.length > 0) {
+        activeHeldRecordIndex = (activeHeldRecordIndex + 1) % allHeldTransactions.length;
+        renderHeldTransactionsList(allHeldTransactions);
+      }
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (allHeldTransactions.length > 0) {
+        activeHeldRecordIndex = (activeHeldRecordIndex - 1 + allHeldTransactions.length) % allHeldTransactions.length;
+        renderHeldTransactionsList(allHeldTransactions);
+      }
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (allHeldTransactions.length > 0 && activeHeldRecordIndex >= 0 && activeHeldRecordIndex < allHeldTransactions.length) {
+        resumeHeldTransaction(allHeldTransactions[activeHeldRecordIndex].held_id);
+      }
+      return;
+    }
+    return;
+  }
+
+  // Context 8: Hold Transaction Modal is Open
+  const holdModal = document.getElementById("hold-transaction-modal");
+  if (holdModal && holdModal.classList.contains("show")) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      bootstrap.Modal.getInstance(holdModal)?.hide();
+      focusBarcodeInput();
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      executeHold();
+      return;
+    }
+    return;
+  }
+
+  // Context 9: Clear Cart Confirmation Modal is Open
+  const clearCartModal = document.getElementById("clear-cart-confirm-modal");
+  if (clearCartModal && clearCartModal.classList.contains("show")) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      bootstrap.Modal.getInstance(clearCartModal)?.hide();
+      focusBarcodeInput();
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      bootstrap.Modal.getInstance(clearCartModal)?.hide();
+      closeSale();
+      return;
+    }
+    return;
+  }
+
+  // Context 10: Any other modal open (e.g. Hotkey Help, Receipt)
+  if (isAnyModalOpen()) {
+    if (e.key === "Escape" || e.key === "Enter") {
       e.preventDefault();
       document.querySelectorAll(".modal.show").forEach((m) => {
         bootstrap.Modal.getInstance(m)?.hide();
@@ -1217,7 +1849,66 @@ const handleGlobalShortcuts = (e) => {
     return;
   }
 
-  // Context 8: Active POS Checkout Register View
+  // Context 11: Active POS Checkout Register View
+
+  // Tab: Logical zones navigation
+  if (e.key === "Tab") {
+    e.preventDefault();
+    cycleRegisterLogicalZone(e.shiftKey ? -1 : 1);
+    return;
+  }
+
+  // Spatial Arrow-Key Navigation across all buttons/controls
+  if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    e.preventDefault();
+    navigateSpatially(e.key);
+    return;
+  }
+
+  // Enter or Space: Activate focused control
+  if (e.key === "Enter" || e.key === " ") {
+    if (document.activeElement === document.getElementById("barcode-input")) {
+      e.preventDefault();
+      handleBarcodeScan();
+      return;
+    }
+    if (document.activeElement === document.getElementById("quantity")) {
+      e.preventDefault();
+      const scan = document.getElementById("barcode-input");
+      if (scan) setSpatialFocus(scan);
+      return;
+    }
+    if (document.activeElement && (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "SELECT")) {
+      // Allow select or input native action if desirable
+      activateFocusedControl(e);
+      return;
+    }
+    activateFocusedControl(e);
+    return;
+  }
+
+  // Escape: Return to home scan field, or clear cart
+  if (e.key === "Escape") {
+    e.preventDefault();
+    const activeView = document.querySelector(".pos-view:not(.d-none)");
+    if (activeView && activeView.id !== "view-checkout") {
+      switchPosView("view-checkout");
+      setSpatialFocus(document.getElementById("barcode-input"));
+      return;
+    }
+    if (currentSpatialFocusEl && currentSpatialFocusEl !== document.getElementById("barcode-input")) {
+      setSpatialFocus(document.getElementById("barcode-input"));
+      return;
+    }
+    if (cart.length > 0) {
+      requestClearCart();
+    } else {
+      showScanFeedback("Register ready.");
+    }
+    return;
+  }
+
+  // Dedicated Function Key Shortcuts
   switch (e.key) {
     case "F1":
       openHotkeyHelpModal();
@@ -1248,47 +1939,23 @@ const handleGlobalShortcuts = (e) => {
       break;
 
     case "F8":
-      openHoldModal();
+      triggerArCreditSale();
       break;
 
     case "F9":
-      openTenderModal();
+      triggerCashTender();
       break;
 
     case "F10":
       openResumeModal();
       break;
 
+    case "F11":
+      triggerHoldTransaction();
+      break;
+
     case "F12":
-      if (cart.length > 0) {
-        openTenderModal();
-      } else {
-        showScanFeedback("Cannot tender an empty cart. Scan items first.", true);
-      }
-      break;
-
-    case "ArrowDown":
-      if (cart.length > 0) {
-        e.preventDefault();
-        activeCartIndex = (activeCartIndex + 1) % cart.length;
-        renderCart();
-      }
-      break;
-
-    case "ArrowUp":
-      if (cart.length > 0) {
-        e.preventDefault();
-        activeCartIndex = (activeCartIndex - 1 + cart.length) % cart.length;
-        renderCart();
-      }
-      break;
-
-    case "Escape":
-      if (cart.length > 0) {
-        requestVoidTransaction();
-      } else {
-        showScanFeedback("Register ready.");
-      }
+      triggerActiveCheckout();
       break;
 
     default:
@@ -1844,37 +2511,54 @@ const updateHeldTransactionsBadge = async () => {
   }
 };
 
-const openHoldModal = () => {
+const triggerHoldTransaction = async () => {
   if (!cart.length) {
     showScanFeedback("Cart is empty. Nothing to hold.", true);
-    showError("Add at least one product before holding the transaction.");
     return;
   }
-
-  const modalEl = document.getElementById("hold-transaction-modal");
-  if (!modalEl) return;
-
   const totalItems = cart.reduce((sum, item) => sum + Number(item.quantity || 1), 0);
   const grandTotalStr = document.getElementById("pos-grand-total")?.textContent || "PHP 0.00";
 
-  const itemCountEl = document.getElementById("hold-item-count");
-  const totalAmountEl = document.getElementById("hold-total-amount");
-  if (itemCountEl) itemCountEl.textContent = `${totalItems} items (${cart.length} line items)`;
-  if (totalAmountEl) totalAmountEl.textContent = grandTotalStr;
+  try {
+    const auth = await requestSupervisorAuth(
+      "hold",
+      `Hold ${totalItems} items (${grandTotalStr})`
+    );
 
-  const custSelect = document.getElementById("ar_customer_id");
-  const selectedCustomer = custSelect?.value ? arCustomers.find((c) => String(c.ar_customer_id) === custSelect.value) : null;
-  const labelInput = document.getElementById("hold-customer-label");
-  if (labelInput) {
-    labelInput.value = selectedCustomer ? selectedCustomer.customer_name : (activeHoldRef ? `Continuation of ${activeHoldRef}` : "");
+    // Prompt optional note in hold modal
+    const modalEl = document.getElementById("hold-transaction-modal");
+    if (!modalEl) {
+      await executeHold();
+      return;
+    }
+    const itemCountEl = document.getElementById("hold-item-count");
+    const totalAmountEl = document.getElementById("hold-total-amount");
+    if (itemCountEl) itemCountEl.textContent = `${totalItems} items (${cart.length} line items)`;
+    if (totalAmountEl) totalAmountEl.textContent = grandTotalStr;
+
+    const custSelect = document.getElementById("ar_customer_id");
+    const selectedCustomer = custSelect?.value ? arCustomers.find((c) => String(c.ar_customer_id) === custSelect.value) : null;
+    const labelInput = document.getElementById("hold-customer-label");
+    if (labelInput) {
+      labelInput.value = selectedCustomer ? selectedCustomer.customer_name : (activeHoldRef ? `Continuation of ${activeHoldRef}` : `Cart ${new Date().toLocaleTimeString()}`);
+    }
+
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+    setTimeout(() => {
+      labelInput?.focus();
+      labelInput?.select();
+    }, 150);
+  } catch (err) {
+    if (err.message && err.message !== "Cancelled") {
+      showError(err.message);
+    }
+    focusBarcodeInput();
   }
+};
 
-  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-  modal.show();
-  setTimeout(() => {
-    labelInput?.focus();
-    labelInput?.select();
-  }, 150);
+const openHoldModal = () => {
+  triggerHoldTransaction();
 };
 
 const executeHold = async () => {
@@ -1924,6 +2608,7 @@ const executeHold = async () => {
     console.error(err);
     showError(err.response?.data?.message || "Failed to hold transaction.");
   }
+  focusBarcodeInput();
 };
 
 const openResumeModal = async () => {
@@ -1935,6 +2620,7 @@ const openResumeModal = async () => {
     listTbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Loading held transactions...</td></tr>';
   }
 
+  activeHeldRecordIndex = 0;
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
 
@@ -1957,24 +2643,30 @@ const renderHeldTransactionsList = (records) => {
 
   if (!records.length) {
     listTbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No held transactions waiting.</td></tr>';
+    activeHeldRecordIndex = -1;
     return;
   }
 
+  if (activeHeldRecordIndex < 0 || activeHeldRecordIndex >= records.length) {
+    activeHeldRecordIndex = 0;
+  }
+
   listTbody.innerHTML = records
-    .map((h) => {
+    .map((h, idx) => {
+      const isSelected = idx === activeHeldRecordIndex;
       const isResumed = activeHeldId && Number(activeHeldId) === Number(h.held_id);
       return `
-        <tr class="${isResumed ? "table-warning" : ""}">
-          <td class="font-monospace fw-bold">${escapeHtml(h.hold_reference)}</td>
+        <tr class="${isSelected ? "table-active pos-row-selected" : (isResumed ? "table-warning" : "")}" data-held-index="${idx}">
+          <td class="font-monospace fw-bold text-primary">${escapeHtml(h.hold_reference)}</td>
           <td class="fw-semibold">${escapeHtml(h.customer_label || "No note")}</td>
           <td class="small text-muted font-monospace">${escapeHtml(h.created_at)}</td>
           <td class="text-center fw-bold">${h.item_count}</td>
-          <td class="text-end font-monospace fw-bold">P${Number(h.total_amount).toFixed(2)}</td>
+          <td class="text-end font-monospace fw-bold">PHP ${Number(h.total_amount).toFixed(2)}</td>
           <td class="text-center text-nowrap">
-            <button type="button" class="btn btn-sm ${isResumed ? "btn-secondary" : "btn-primary"} py-0 px-2 resume-action-btn" data-held-id="${h.held_id}" ${isResumed ? "disabled" : ""}>
-              ${isResumed ? "Resumed" : "Resume"}
+            <button type="button" class="btn btn-sm ${isSelected ? "btn-warning text-dark fw-bold" : (isResumed ? "btn-secondary" : "btn-primary")} py-0 px-2 resume-action-btn" data-held-id="${h.held_id}" ${isResumed ? "disabled" : ""} tabindex="-1">
+              ${isResumed ? "Resumed" : "Resume [Enter]"}
             </button>
-            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 ms-1 discard-action-btn" data-held-id="${h.held_id}" title="Discard held transaction">
+            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 ms-1 discard-action-btn" data-held-id="${h.held_id}" title="Discard held transaction" tabindex="-1">
               &times;
             </button>
           </td>
@@ -1983,15 +2675,27 @@ const renderHeldTransactionsList = (records) => {
     })
     .join("");
 
+  const activeRow = listTbody.querySelector(`tr[data-held-index="${activeHeldRecordIndex}"]`);
+  activeRow?.scrollIntoView({ block: "nearest" });
+
+  listTbody.querySelectorAll("tr").forEach((row) => {
+    row.addEventListener("click", () => {
+      activeHeldRecordIndex = Number(row.dataset.heldIndex);
+      renderHeldTransactionsList(records);
+    });
+  });
+
   listTbody.querySelectorAll(".resume-action-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
       const heldId = Number(btn.dataset.heldId);
       resumeHeldTransaction(heldId);
     });
   });
 
   listTbody.querySelectorAll(".discard-action-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
       const heldId = Number(btn.dataset.heldId);
       discardHeldTransaction(heldId);
     });
@@ -2017,11 +2721,30 @@ const resumeHeldTransaction = async (heldId) => {
     }
   }
 
+  // Hide the list modal while supervisor authorizes
+  bootstrap.Modal.getInstance(document.getElementById("resume-transaction-modal"))?.hide();
+
+  // Prompt supervisor authorization (retrieving held transaction audit risk)
+  let auth = null;
+  try {
+    auth = await requestSupervisorAuth(
+      "retrieve_held",
+      `Recall Ref: ${held.hold_reference} (PHP ${Number(held.total_amount).toFixed(2)})`
+    );
+  } catch (err) {
+    if (err.message && err.message !== "Cancelled") {
+      showError(err.message);
+    }
+    focusBarcodeInput();
+    return;
+  }
+
   // Restore cart items
   cart = (held.items || []).map((item) => {
     const prod = products.find((p) => Number(p.product_id) === Number(item.productId));
     return {
       productId: Number(item.productId),
+      barcode: item.barcode || prod?.barcode || "",
       productName: item.productName || prod?.product_name || "Product",
       unitPrice: Number(item.unitPrice || prod?.price || 0),
       quantity: Number(item.quantity || 1),
@@ -2060,19 +2783,12 @@ const resumeHeldTransaction = async (heldId) => {
     document.getElementById("tax_rate").value = state.taxRate;
   }
 
+  document.getElementById("held-sale-status-badge")?.classList.remove("d-none");
   updateSaleTypeFields();
   updateSukiFields();
   renderCart();
-
-  // Show status banner badge
-  const statusBadge = document.getElementById("held-sale-status-badge");
-  if (statusBadge) {
-    statusBadge.textContent = `RESUMED: ${held.hold_reference}${held.customer_label ? ` (${held.customer_label})` : ""}`;
-    statusBadge.classList.remove("d-none");
-  }
-
-  bootstrap.Modal.getInstance(document.getElementById("resume-transaction-modal"))?.hide();
-  showScanFeedback(`Resumed held sale ${held.hold_reference}. Add missing items or checkout.`);
+  await updateHeldTransactionsBadge();
+  showScanFeedback(`Resumed held sale ${held.hold_reference} (Authorized by ${auth?.supervisor?.name || "Supervisor"}).`);
   focusBarcodeInput();
 };
 
@@ -2113,6 +2829,8 @@ const requestSupervisorAuth = (actionType, targetRef = "") => {
   return new Promise((resolve, reject) => {
     supervisorAuthResolve = resolve;
     supervisorAuthReject = reject;
+    activeSupervisorActionType = actionType;
+    activeSupervisorTargetRef = targetRef;
 
     const modalEl = document.getElementById("supervisor-modal");
     if (!modalEl) {
@@ -2173,8 +2891,8 @@ const handleSupervisorSubmit = async () => {
       JSON.stringify({
         username,
         password,
-        action_type: actionLabel.replace("Action: ", "").split("[")[0].trim().toLowerCase().replace(/\s+/g, "_"),
-        target_reference: actionLabel,
+        action_type: activeSupervisorActionType || actionLabel.replace("Action: ", "").split("[")[0].trim().toLowerCase().replace(/\s+/g, "_"),
+        target_reference: activeSupervisorTargetRef || actionLabel,
         shift_id: currentShiftId
       })
     );
@@ -2347,8 +3065,8 @@ const submitDrawerEvent = async () => {
 
   try {
     const auth = await requestSupervisorAuth(
-      activeDrawerEventType === "float" ? "cash_float" : "cash_lift",
-      `Amount: ₱${amount.toFixed(2)} - ${notes}`
+      activeDrawerEventType === "float" ? "cash_float" : "lift",
+      `Amount: ₱${amount.toFixed(2)}${notes ? " - " + notes : ""}`
     );
 
     const formData = new FormData();
