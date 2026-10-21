@@ -1,0 +1,18 @@
+<?php
+/**
+ * Local PostgreSQL Database Configuration Example
+ * 
+ * To use this file, copy or rename it to `config.local.php` in the same directory (/api):
+ *   cp config.local.php.example config.local.php
+ * 
+ * Adjust settings below to match your local PostgreSQL installation.
+ */
+
+return [
+  'db_host'   => 'localhost',
+  'db_port'   => 5432,
+  'db_name'   => 'pos_ar_system',
+  'db_user'   => 'postgres',
+  'db_pass'   => 'postgres',    // Set to your local PostgreSQL password
+  'ssl_mode'  => 'disable'      // 'disable' for standard local installs without SSL
+];

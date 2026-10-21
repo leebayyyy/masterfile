@@ -17,7 +17,7 @@
 
     function getAllProducts(){
       include "connection-pdo.php";
-      $sql = "SELECT a.product_id, a.price, a.product_name, a.category_id, a.unit_of_measure_id, a.price_tier, a.wholesale_price, a.is_active,
+      $sql = "SELECT a.product_id, COALESCE(a.barcode, LPAD(a.product_id::text, 8, '0')) AS barcode, a.price, a.product_name, a.category_id, a.unit_of_measure_id, a.price_tier, a.wholesale_price, a.is_active,
                      b.category_name,
                      COALESCE(u.measure_name, '') AS measure_name
               FROM tblproducts a
@@ -44,7 +44,7 @@
     function getProduct($json){
       include "connection-pdo.php";
       $json = json_decode($json, true);
-      $sql = "SELECT a.product_id, a.price, a.product_name, a.category_id, a.unit_of_measure_id, a.price_tier, a.wholesale_price, a.is_active,
+      $sql = "SELECT a.product_id, COALESCE(a.barcode, LPAD(a.product_id::text, 8, '0')) AS barcode, a.price, a.product_name, a.category_id, a.unit_of_measure_id, a.price_tier, a.wholesale_price, a.is_active,
                      b.category_name,
                      COALESCE(u.measure_name, '') AS measure_name,
                      pp.promo_id, pr.promo_name, pr.discount_rate

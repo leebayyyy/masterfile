@@ -41,6 +41,20 @@
               <!-- Barcode Input Bar -->
               <div class="pos-barcode-container mb-1 mb-lg-2">
                 <div class="input-group input-group-lg shadow-sm">
+                  <span class="input-group-text bg-secondary text-white fw-bold px-2" title="Quantity First [F3]">
+                    <span class="pos-key-badge bg-warning text-dark me-1">F3</span> QTY
+                  </span>
+                  <input
+                    type="number"
+                    id="quantity"
+                    class="form-control text-center fw-bold font-monospace fs-4"
+                    min="1"
+                    step="1"
+                    value="1"
+                    style="max-width: 95px;"
+                    title="Type quantity, press Enter to scan [F3]"
+                    autocomplete="off"
+                  />
                   <span class="input-group-text bg-primary text-white fw-bold">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-upc-scan me-1" viewBox="0 0 16 16">
                       <path d="M1.5 1a.5.5 0 0 0-.5.5v3a.5.5 0 0 1-1 0v-3A1.5 1.5 0 0 1 1.5 0h3a.5.5 0 0 1 0 1zM11 .5a.5.5 0 0 1 .5-.5h3A1.5 1.5 0 0 1 16 1.5v3a.5.5 0 0 1-1 0v-3a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 1-.5-.5M.5 11a.5.5 0 0 1 .5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 1 0 1h-3A1.5 1.5 0 0 1 0 14.5v-3a.5.5 0 0 1 .5-.5m15 0a.5.5 0 0 1 .5.5v3a1.5 1.5 0 0 1-1.5 1.5h-3a.5.5 0 0 1 0-1h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 1 .5-.5M3 4.5a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0z"/>
@@ -51,39 +65,27 @@
                     type="text"
                     id="barcode-input"
                     class="form-control pos-barcode-input fw-bold"
-                    placeholder="Scan barcode or type Product ID (e.g. 1, 2) or Name + ENTER..."
+                    placeholder="Scan barcode or type item name + ENTER..."
                     autocomplete="off"
                     autofocus
                   />
-                  <button type="button" class="btn btn-primary fw-bold px-3" id="btn-open-search" title="Search items by name [F1]">
-                    <span class="pos-key-badge">F1</span> Lookup
+                  <button type="button" class="btn btn-primary fw-bold px-3" id="btn-open-search" title="Search items by name or barcode [F2]">
+                    <span class="pos-key-badge">F2</span> Lookup
                   </button>
-                  <button type="button" class="btn btn-outline-secondary fw-bold px-2 px-md-3" id="btn-open-qty" title="Change Quantity [F2]">
-                    <span class="pos-key-badge">F2</span> Qty
-                  </button>
-                  <button type="button" class="btn btn-outline-danger fw-bold px-2 px-md-3" id="btn-void-item" title="Void Selected Line Item [F4]">
+                  <button type="button" class="btn btn-outline-danger fw-bold px-2 px-md-3" id="btn-void-item" title="Void Selected Line Item [F4] (Supervisor Override)">
                     <span class="pos-key-badge">F4</span> Void
                   </button>
-                  <button type="button" class="btn btn-outline-info fw-bold px-2 px-md-3 position-relative" id="btn-resume-sale" title="Resume Held Transaction [F6]">
-                    <span class="pos-key-badge">F6</span> Resume <span class="badge bg-danger rounded-pill d-none" id="held-count-badge">0</span>
-                  </button>
-                  <button type="button" class="btn btn-outline-warning fw-bold px-2 px-md-3" id="btn-hold-sale" title="Hold Current Sale [F7]">
-                    <span class="pos-key-badge">F7</span> Hold
+                  <button type="button" class="btn btn-outline-dark fw-bold px-2 px-md-3" id="btn-void-trans" title="Void Entire Transaction [F5] (Supervisor Override)">
+                    <span class="pos-key-badge">F5</span> Void Trans
                   </button>
                 </div>
                 <!-- Quick Product Select / Fallback Entry Row -->
-                <div class="card p-2 bg-light border shadow-sm mt-2">
+                <div class="card p-2 bg-light border shadow-sm mt-2 d-none" id="fallback-select-row">
                   <div class="row g-2 align-items-center">
-                    <div class="col-12 col-md-7">
+                    <div class="col-12 col-md-9">
                       <select class="form-select form-select-sm" id="product_id" aria-label="Select product"></select>
                     </div>
-                    <div class="col-6 col-md-2">
-                      <div class="input-group input-group-sm">
-                        <span class="input-group-text">Qty</span>
-                        <input class="form-control text-center fw-bold font-monospace" type="number" id="quantity" min="1" step="1" value="1" />
-                      </div>
-                    </div>
-                    <div class="col-6 col-md-3">
+                    <div class="col-12 col-md-3">
                       <button type="button" class="btn btn-sm btn-success w-100 fw-bold" id="btn-add-item">
                         + Add Item
                       </button>
@@ -105,15 +107,18 @@
               <!-- Compact Keyboard Shortcut Toolbar -->
               <div class="pos-hotkey-dock p-2 mb-0">
                 <span class="small fw-bold text-secondary me-2">SHORTCUTS:</span>
-                <button type="button" class="pos-hotkey-btn" id="btn-hk-lookup"><span class="pos-key-badge">F1</span> Lookup</button>
-                <button type="button" class="pos-hotkey-btn" id="btn-hk-qty"><span class="pos-key-badge">F2</span> Qty</button>
-                <button type="button" class="pos-hotkey-btn" id="btn-hk-cash"><span class="pos-key-badge">F3</span> Cash</button>
-                <button type="button" class="pos-hotkey-btn" id="btn-hk-void"><span class="pos-key-badge">F4</span> Void Item</button>
-                <button type="button" class="pos-hotkey-btn text-info" id="btn-hk-resume"><span class="pos-key-badge">F6</span> Resume</button>
-                <button type="button" class="pos-hotkey-btn text-warning" id="btn-hk-hold"><span class="pos-key-badge">F7</span> Hold</button>
-                <button type="button" class="pos-hotkey-btn" id="btn-hk-ar"><span class="pos-key-badge">F9</span> AR Credit</button>
-                <button type="button" class="pos-hotkey-btn text-warning" id="btn-hk-tender"><span class="pos-key-badge">F12</span> Checkout</button>
-                <button type="button" class="pos-hotkey-btn text-danger" id="btn-hk-cancel"><span class="pos-key-badge">Esc</span> Clear</button>
+                <button type="button" class="pos-hotkey-btn text-info" id="btn-hk-help"><span class="pos-key-badge">F1</span> Help</button>
+                <button type="button" class="pos-hotkey-btn" id="btn-hk-lookup"><span class="pos-key-badge">F2</span> Lookup</button>
+                <button type="button" class="pos-hotkey-btn text-warning" id="btn-hk-qty"><span class="pos-key-badge">F3</span> Qty</button>
+                <button type="button" class="pos-hotkey-btn text-danger" id="btn-hk-void"><span class="pos-key-badge">F4</span> Void Line</button>
+                <button type="button" class="pos-hotkey-btn text-danger" id="btn-hk-void-trans"><span class="pos-key-badge">F5</span> Void Trans</button>
+                <button type="button" class="pos-hotkey-btn text-success" id="btn-hk-float"><span class="pos-key-badge">F6</span> Float</button>
+                <button type="button" class="pos-hotkey-btn text-warning" id="btn-hk-lift"><span class="pos-key-badge">F7</span> Lift/Drop</button>
+                <button type="button" class="pos-hotkey-btn text-secondary" id="btn-hk-hold"><span class="pos-key-badge">F8</span> Hold</button>
+                <button type="button" class="pos-hotkey-btn text-primary" id="btn-hk-tender"><span class="pos-key-badge">F9</span> Tender</button>
+                <button type="button" class="pos-hotkey-btn text-info" id="btn-hk-resume"><span class="pos-key-badge">F10</span> Resume</button>
+                <button type="button" class="pos-hotkey-btn text-success fw-bold" id="btn-hk-complete"><span class="pos-key-badge">F12</span> Complete</button>
+                <button type="button" class="pos-hotkey-btn text-light" id="btn-hk-cancel"><span class="pos-key-badge">Esc</span> Clear</button>
               </div>
             </div>
 
@@ -206,7 +211,7 @@
               <!-- Primary Action Checkout Buttons -->
               <div class="d-grid gap-2 pos-payment-actions">
                 <button type="button" class="btn btn-success btn-lg py-3 fw-bold fs-4 shadow-sm" id="btn-open-tender">
-                  CHECKOUT / TENDER [F12]
+                  CHECKOUT / TENDER [F9 / F12]
                 </button>
                 <button type="button" class="btn btn-outline-secondary" id="btn-cancel-sale">
                   Clear Register [Esc]
@@ -346,12 +351,12 @@
       </div>
     </div>
 
-    <!-- PRODUCT LOOKUP MODAL [F1] -->
+    <!-- PRODUCT LOOKUP MODAL [F2] -->
     <div class="modal fade" id="product-search-modal" tabindex="-1" aria-labelledby="searchModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content border-0 shadow">
           <div class="modal-header bg-primary text-white py-3">
-            <h5 class="modal-title fw-bold" id="searchModalLabel">PRODUCT LOOKUP (F1)</h5>
+            <h5 class="modal-title fw-bold" id="searchModalLabel">PRODUCT LOOKUP (F2)</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body p-3">
@@ -359,17 +364,17 @@
               type="text"
               id="product-search-query"
               class="form-control form-control-lg mb-3"
-              placeholder="Type product name or ID to filter..."
+              placeholder="Scan barcode or type product name to filter..."
               autocomplete="off"
             />
             <div class="table-responsive" style="max-height: 340px; overflow-y: auto;">
-              <table class="table table-hover table-sm align-middle mb-0">
+              <table class="table table-hover table-sm align-middle mb-0" id="product-lookup-table">
                 <thead class="table-light sticky-top">
                   <tr>
-                    <th style="width: 15%;">Product ID</th>
+                    <th style="width: 28%;">Barcode</th>
                     <th>Product Name</th>
-                    <th class="text-end" style="width: 25%;">Price</th>
-                    <th class="text-center" style="width: 20%;">Action</th>
+                    <th class="text-end" style="width: 22%;">Price</th>
+                    <th class="text-center" style="width: 15%;">Action</th>
                   </tr>
                 </thead>
                 <tbody id="product-search-results"></tbody>
@@ -377,8 +382,8 @@
             </div>
           </div>
           <div class="modal-footer bg-light py-2">
-            <span class="small text-muted me-auto">Press Esc to close</span>
-            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            <span class="small text-muted me-auto"><kbd>↑</kbd> <kbd>↓</kbd> Navigate &nbsp;|&nbsp; <kbd>Enter</kbd> Add Item &nbsp;|&nbsp; <kbd>Esc</kbd> Close</span>
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close [Esc]</button>
           </div>
         </div>
       </div>
@@ -482,35 +487,231 @@
       </div>
     </div>
 
-    <!-- RESUME HELD TRANSACTIONS MODAL [F6] -->
-    <div class="modal fade" id="resume-transaction-modal" tabindex="-1" aria-labelledby="resumeModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered modal-lg">
+    <!-- SUPERVISOR OVERRIDE MODAL -->
+    <div class="modal fade" id="supervisor-modal" tabindex="-1" aria-labelledby="supModalLabel" aria-hidden="true" data-bs-backdrop="static">
+      <div class="modal-dialog modal-dialog-centered modal-sm">
         <div class="modal-content border-0 shadow">
-          <div class="modal-header bg-primary text-white py-2">
-            <h5 class="modal-title fs-6 fw-bold" id="resumeModalLabel">RESUME HELD TRANSACTIONS</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          <div class="modal-header bg-danger text-white py-2">
+            <h5 class="modal-title fs-6 fw-bold" id="supModalLabel">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-shield-lock-fill me-1" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M8 0c-.69 0-1.843.265-2.928.56-1.11.3-2.229.655-2.887.87a1.54 1.54 0 0 0-1.044 1.262c-.596 4.477.787 7.795 2.464 9.99a11.8 11.8 0 0 0 3.32 2.882.5.5 0 0 0 .55 0c1.07-.633 2.193-1.624 3.32-2.882 1.677-2.195 3.06-5.513 2.464-9.99a1.54 1.54 0 0 0-1.044-1.263 63 63 0 0 0-2.887-.87C9.843.266 8.69 0 8 0m0 5a1.5 1.5 0 0 1 .5 2.915l.385 1.99a.5.5 0 0 1-.491.595h-.788a.5.5 0 0 1-.49-.595l.384-1.99A1.5 1.5 0 0 1 8 5"/>
+              </svg>
+              SUPERVISOR OVERRIDE
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" id="btn-sup-close"></button>
           </div>
           <div class="modal-body p-3">
+            <div class="alert alert-warning py-1 px-2 small mb-2 fw-semibold" id="supervisor-action-label">
+              Action: Protected Operation
+            </div>
+            <div class="mb-2">
+              <label class="form-label small fw-bold mb-1" for="supervisor-username">Supervisor Username</label>
+              <input type="text" class="form-control form-control-sm" id="supervisor-username" autocomplete="off" placeholder="supervisor" />
+            </div>
+            <div class="mb-2">
+              <label class="form-label small fw-bold mb-1" for="supervisor-password">Supervisor Password / PIN</label>
+              <input type="password" class="form-control form-control-sm" id="supervisor-password" autocomplete="off" placeholder="••••••••" />
+            </div>
+            <div class="text-danger small fw-semibold d-none" id="supervisor-error-msg"></div>
+          </div>
+          <div class="modal-footer bg-light py-2 justify-content-between">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal" id="btn-sup-cancel">Cancel [Esc]</button>
+            <button type="button" class="btn btn-danger btn-sm fw-bold px-3" id="btn-sup-submit">Authorize [Enter]</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BEGINNING CASH / STARTING BALANCE MODAL -->
+    <div class="modal fade" id="beginning-cash-modal" tabindex="-1" aria-labelledby="begCashModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+          <div class="modal-header bg-primary text-white py-3">
+            <h5 class="modal-title fw-bold" id="begCashModalLabel">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-cash-stack me-2" viewBox="0 0 16 16">
+                <path d="M1 3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1zm7 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/>
+                <path d="M0 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1zm3 0a2 2 0 0 1-2 2v4a2 2 0 0 1 2 2h10a2 2 0 0 1 2-2V7a2 2 0 0 1-2-2z"/>
+              </svg>
+              OPENING SHIFT: BEGINNING CASH
+            </h5>
+          </div>
+          <div class="modal-body p-4">
+            <p class="text-muted small mb-3">
+              Please enter the starting cash fund (change fund) counted in the register drawer before commencing transactions for this shift.
+            </p>
+            <div class="mb-3">
+              <label class="form-label fw-bold" for="beginning-cash-input">Starting Cash Fund (PHP):</label>
+              <div class="input-group input-group-lg">
+                <span class="input-group-text bg-light fw-bold">PHP</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  class="form-control form-control-lg text-end fw-bold font-monospace fs-2"
+                  id="beginning-cash-input"
+                  value="1000.00"
+                  autocomplete="off"
+                  autofocus
+                />
+              </div>
+            </div>
+            <div class="alert alert-info py-2 px-3 small mb-0">
+              <strong>Mandatory Shift Step:</strong> This starting balance is recorded once per shift. Re-logging into an open shift will resume directly.
+            </div>
+          </div>
+          <div class="modal-footer bg-light p-3">
+            <button type="button" class="btn btn-primary btn-lg w-100 fw-bold" id="btn-confirm-beginning-cash">
+              OPEN REGISTER &amp; START SHIFT [Enter]
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CASH DRAWER EVENT MODAL (F6: Float / F7: Lift/Drop) -->
+    <div class="modal fade" id="drawer-event-modal" tabindex="-1" aria-labelledby="drawerEventModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+          <div class="modal-header bg-dark text-white py-3">
+            <h5 class="modal-title fw-bold" id="drawerEventModalLabel">CASH DRAWER EVENT</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body p-4">
+            <div class="mb-3">
+              <span class="badge bg-warning text-dark fs-6 px-3 py-2 fw-bold" id="drawer-event-badge">FLOAT: ADD CHANGE FUND</span>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-bold" for="drawer-event-amount">Amount (PHP):</label>
+              <div class="input-group input-group-lg">
+                <span class="input-group-text bg-light fw-bold">PHP</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  class="form-control form-control-lg text-end fw-bold font-monospace fs-2"
+                  id="drawer-event-amount"
+                  placeholder="0.00"
+                  autocomplete="off"
+                />
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold" for="drawer-event-notes">Event Notes / Description:</label>
+              <input type="text" class="form-control" id="drawer-event-notes" placeholder="e.g. Additional change fund, Excess cash pickup" />
+            </div>
+            <div class="alert alert-warning py-2 px-3 small mb-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-shield-lock-fill me-1" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M8 0c-.69 0-1.843.265-2.928.56-1.11.3-2.229.655-2.887.87a1.54 1.54 0 0 0-1.044 1.262c-.596 4.477.787 7.795 2.464 9.99a11.8 11.8 0 0 0 3.32 2.882.5.5 0 0 0 .55 0c1.07-.633 2.193-1.624 3.32-2.882 1.677-2.195 3.06-5.513 2.464-9.99a1.54 1.54 0 0 0-1.044-1.263 63 63 0 0 0-2.887-.87C9.843.266 8.69 0 8 0m0 5a1.5 1.5 0 0 1 .5 2.915l.385 1.99a.5.5 0 0 1-.491.595h-.788a.5.5 0 0 1-.49-.595l.384-1.99A1.5 1.5 0 0 1 8 5"/>
+              </svg>
+              Requires Supervisor Authorization to execute and record.
+            </div>
+          </div>
+          <div class="modal-footer bg-light p-3 justify-content-between">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel [Esc]</button>
+            <button type="button" class="btn btn-primary fw-bold px-4" id="btn-submit-drawer-event">Proceed with Supervisor [Enter]</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HOTKEY REFERENCE CARD MODAL [F1] -->
+    <div class="modal fade" id="hotkey-reference-modal" tabindex="-1" aria-labelledby="hotkeyModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+          <div class="modal-header bg-dark text-white py-3">
+            <h5 class="modal-title fw-bold" id="hotkeyModalLabel">
+              ⌨️ GAISANO-STYLE POS TERMINAL HOTKEY CARD
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body p-4">
             <div class="table-responsive">
-              <table class="table table-hover table-striped align-middle table-sm mb-0">
-                <thead>
+              <table class="table table-bordered table-striped align-middle mb-0">
+                <thead class="table-dark">
                   <tr>
-                    <th>Ref #</th>
-                    <th>Customer / Note</th>
-                    <th>Time Held</th>
-                    <th class="text-center">Items</th>
-                    <th class="text-end">Total</th>
-                    <th class="text-center">Action</th>
+                    <th style="width: 20%;">Key / Shortcut</th>
+                    <th style="width: 35%;">Action</th>
+                    <th>Workflow Description</th>
                   </tr>
                 </thead>
-                <tbody id="held-transactions-list">
-                  <tr><td colspan="6" class="text-center text-muted py-3">No held transactions.</td></tr>
+                <tbody>
+                  <tr>
+                    <td><kbd class="bg-info text-dark fw-bold">F1</kbd></td>
+                    <td><strong>Hotkey Help</strong></td>
+                    <td>Open this quick reference guide and key bindings.</td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-primary text-white fw-bold">F2</kbd></td>
+                    <td><strong>Product Lookup</strong></td>
+                    <td>Search products by barcode OR name. Navigate with <kbd>↑</kbd><kbd>↓</kbd> and press <kbd>Enter</kbd> to add.</td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-warning text-dark fw-bold">F3</kbd></td>
+                    <td><strong>Focus Quantity</strong></td>
+                    <td>Jump to Quantity field. Type quantity → press <kbd>Enter</kbd> → scan barcode!</td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-danger text-white fw-bold">F4</kbd></td>
+                    <td><strong>Void Selected Line Item</strong></td>
+                    <td>Removes highlighted item from cart. <em>Requires Supervisor Override.</em></td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-danger text-white fw-bold">F5</kbd></td>
+                    <td><strong>Void Entire Transaction</strong></td>
+                    <td>Discards active cart and clears register. <em>Requires Supervisor Override.</em></td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-success text-white fw-bold">F6</kbd></td>
+                    <td><strong>Cash Float (Change Fund)</strong></td>
+                    <td>Add cash fund into register drawer. <em>Requires Supervisor Override.</em></td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-warning text-dark fw-bold">F7</kbd></td>
+                    <td><strong>Cash Lift / Pickup / Drop</strong></td>
+                    <td>Remove excess cash from register drawer. <em>Requires Supervisor Override.</em></td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-secondary text-white fw-bold">F8</kbd></td>
+                    <td><strong>Hold Transaction</strong></td>
+                    <td>Park current customer cart to serve next customer.</td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-primary text-white fw-bold">F9</kbd></td>
+                    <td><strong>Payment / Tender Screen</strong></td>
+                    <td>Open tender checkout screen. Select Cash or AR credit mode.</td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-info text-dark fw-bold">F10</kbd></td>
+                    <td><strong>Resume Held Sale</strong></td>
+                    <td>View list of held carts and restore to active register.</td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-success text-white fw-bold">F12</kbd></td>
+                    <td><strong>Complete Sale / Tender</strong></td>
+                    <td>Finalize sale, print receipt, calculate change (sukli), and update balances.</td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-dark text-white fw-bold">Enter</kbd></td>
+                    <td><strong>Context Action / Confirm</strong></td>
+                    <td>Qty field → moves to scan. Scan → adds item. Tender → completes sale.</td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-dark text-white fw-bold">Esc</kbd></td>
+                    <td><strong>Close / Cancel Modal</strong></td>
+                    <td>Dismisses active dialog. Never silently discards a transaction in progress.</td>
+                  </tr>
+                  <tr>
+                    <td><kbd class="bg-dark text-white fw-bold">↑</kbd> <kbd class="bg-dark text-white fw-bold">↓</kbd></td>
+                    <td><strong>Line / List Navigation</strong></td>
+                    <td>Navigate cart items on register, or search items in product lookup.</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
           </div>
           <div class="modal-footer bg-light py-2">
-            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            <span class="small text-muted me-auto">Ready for kiosk defense demonstration</span>
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close [Esc]</button>
           </div>
         </div>
       </div>

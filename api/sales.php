@@ -18,7 +18,7 @@ function getFormData($user) {
   }
   return json_encode([
     "products" => $conn->query(
-      "SELECT p.product_id, p.product_name, p.price, COALESCE(pr.discount_rate, 0) AS promo_rate,
+      "SELECT p.product_id, COALESCE(p.barcode, LPAD(p.product_id::text, 8, '0')) AS barcode, p.product_name, p.price, COALESCE(pr.discount_rate, 0) AS promo_rate,
               pr.promo_id, pr.promo_name
        FROM tblproducts p
        LEFT JOIN tblpromo pr ON pr.promo_id=(
@@ -393,6 +393,30 @@ function createSale($json) {
       $delHeld = $conn->prepare("DELETE FROM tblheld_transactions WHERE held_id=:heldId");
       $delHeld->execute([":heldId"=>$heldId]);
     }
+    if (!$isAr) {
+      try {
+        $shiftStmt = $conn->prepare(
+          "SELECT shift_id FROM tblshifts
+           WHERE user_id=:userId AND terminal_id=:terminalId AND status='open'
+           ORDER BY shift_id DESC LIMIT 1"
+        );
+        $shiftStmt->execute([":userId"=>$data['cashierUserId'], ":terminalId"=>$terminalId]);
+        $activeShiftId = $shiftStmt->fetchColumn();
+        if ($activeShiftId) {
+          $drawerStmt = $conn->prepare(
+            "INSERT INTO tbldrawer_events (shift_id, event_type, amount, authorized_by, created_at)
+             VALUES (:shiftId, 'sale', :amount, :authorizedBy, CURRENT_TIMESTAMP)"
+          );
+          $drawerStmt->execute([
+            ":shiftId" => $activeShiftId,
+            ":amount" => $total,
+            ":authorizedBy" => $data['cashierUserId']
+          ]);
+        }
+      } catch (Throwable $shiftEx) {
+        error_log("Failed to record drawer sale event: " . $shiftEx->getMessage());
+      }
+    }
     $conn->commit();
     return json_encode([
       "returnValue" => 1,
@@ -504,6 +528,105 @@ function deleteHeldTransaction($heldId) {
   return json_encode(["returnValue" => 1]);
 }
 
+function getActiveShift($user) {
+  include "connection-pdo.php";
+  $terminalId = $_SESSION['pos_terminal_id'] ?? null;
+  if (!$terminalId) {
+    return json_encode(["returnValue" => 1, "activeShift" => null]);
+  }
+  $stmt = $conn->prepare(
+    "SELECT shift_id, user_id, terminal_id, opening_cash, opened_at, status
+     FROM tblshifts
+     WHERE user_id=:userId AND terminal_id=:terminalId AND status='open'
+     ORDER BY shift_id DESC LIMIT 1"
+  );
+  $stmt->execute([":userId"=>$user['user_id'], ":terminalId"=>$terminalId]);
+  $shift = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+  return json_encode(["returnValue" => 1, "activeShift" => $shift]);
+}
+
+function openShift($json, $user) {
+  include "connection-pdo.php";
+  $data = json_decode($json, true) ?: [];
+  $terminalId = $_SESSION['pos_terminal_id'] ?? ($data['terminalId'] ?? null);
+  if (!$terminalId) {
+    http_response_code(422);
+    return json_encode(["returnValue" => 0, "message" => "A terminal must be selected before opening a shift."]);
+  }
+  $openingCash = filter_var($data['openingCash'] ?? ($data['opening_cash'] ?? null), FILTER_VALIDATE_FLOAT);
+  if ($openingCash === false || $openingCash < 0) {
+    http_response_code(422);
+    return json_encode(["returnValue" => 0, "message" => "Please enter a valid starting cash balance (>= 0)."]);
+  }
+
+  $checkStmt = $conn->prepare(
+    "SELECT shift_id, user_id, terminal_id, opening_cash, opened_at, status
+     FROM tblshifts
+     WHERE user_id=:userId AND terminal_id=:terminalId AND status='open'
+     ORDER BY shift_id DESC LIMIT 1"
+  );
+  $checkStmt->execute([":userId"=>$user['user_id'], ":terminalId"=>$terminalId]);
+  $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
+  if ($existing) {
+    return json_encode(["returnValue" => 1, "message" => "Shift already open.", "shift" => $existing]);
+  }
+
+  $stmt = $conn->prepare(
+    "INSERT INTO tblshifts (user_id, terminal_id, opening_cash, opened_at, status)
+     VALUES (:userId, :terminalId, :openingCash, CURRENT_TIMESTAMP, 'open')
+     RETURNING shift_id, user_id, terminal_id, opening_cash, opened_at, status"
+  );
+  $stmt->execute([
+    ":userId" => $user['user_id'],
+    ":terminalId" => $terminalId,
+    ":openingCash" => $openingCash
+  ]);
+  $newShift = $stmt->fetch(PDO::FETCH_ASSOC);
+
+  if ($openingCash > 0) {
+    $evtStmt = $conn->prepare(
+      "INSERT INTO tbldrawer_events (shift_id, event_type, amount, authorized_by, created_at)
+       VALUES (:shiftId, 'float', :amount, :authorizedBy, CURRENT_TIMESTAMP)"
+    );
+    $evtStmt->execute([
+      ":shiftId" => $newShift['shift_id'],
+      ":amount" => $openingCash,
+      ":authorizedBy" => $user['user_id']
+    ]);
+  }
+
+  return json_encode(["returnValue" => 1, "shift" => $newShift]);
+}
+
+function recordDrawerEvent($json, $user) {
+  include "connection-pdo.php";
+  $data = json_decode($json, true) ?: [];
+  $shiftId = filter_var($data['shiftId'] ?? ($data['shift_id'] ?? null), FILTER_VALIDATE_INT);
+  $eventType = strtolower(trim($data['eventType'] ?? ($data['event_type'] ?? '')));
+  $amount = filter_var($data['amount'] ?? null, FILTER_VALIDATE_FLOAT);
+  $authorizedBy = filter_var($data['authorizedBy'] ?? ($data['authorized_by'] ?? null), FILTER_VALIDATE_INT) ?: $user['user_id'];
+
+  if (!$shiftId || !in_array($eventType, ['float', 'lift', 'drop'], true) || $amount === false || $amount <= 0) {
+    http_response_code(422);
+    return json_encode(["returnValue" => 0, "message" => "Invalid drawer event parameters."]);
+  }
+
+  $stmt = $conn->prepare(
+    "INSERT INTO tbldrawer_events (shift_id, event_type, amount, authorized_by, created_at)
+     VALUES (:shiftId, :eventType, :amount, :authorizedBy, CURRENT_TIMESTAMP)
+     RETURNING event_id, shift_id, event_type, amount, created_at"
+  );
+  $stmt->execute([
+    ":shiftId" => $shiftId,
+    ":eventType" => $eventType,
+    ":amount" => $amount,
+    ":authorizedBy" => $authorizedBy
+  ]);
+  $event = $stmt->fetch(PDO::FETCH_ASSOC);
+
+  return json_encode(["returnValue" => 1, "event" => $event]);
+}
+
 $operation = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['operation'] ?? '') : ($_POST['operation'] ?? '');
 $json = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['json'] ?? '') : ($_POST['json'] ?? '');
 switch ($operation) {
@@ -515,6 +638,9 @@ switch ($operation) {
   case "holdTransaction": $user = requireRoles(["Cashier", "Admin", "Manager"]); echo holdTransaction($json, $user); break;
   case "getHeldTransactions": requireRoles(["Cashier", "Admin", "Manager"]); echo getHeldTransactions(); break;
   case "deleteHeldTransaction": requireRoles(["Cashier", "Admin", "Manager"]); echo deleteHeldTransaction((int)($_POST['heldId'] ?? 0)); break;
+  case "getActiveShift": $user = requireRoles(["Cashier", "Admin", "Manager"]); echo getActiveShift($user); break;
+  case "openShift": $user = requireRoles(["Cashier", "Admin", "Manager"]); echo openShift($json, $user); break;
+  case "recordDrawerEvent": $user = requireRoles(["Cashier", "Admin", "Manager"]); echo recordDrawerEvent($json, $user); break;
   default: http_response_code(400); echo json_encode(["message"=>"Invalid sales operation."]);
 }
 ?>

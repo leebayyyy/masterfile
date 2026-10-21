@@ -97,13 +97,109 @@ function setUserPassword($json) {
   return json_encode(["returnValue" => 1]);
 }
 
+function verifySupervisor($json) {
+  include "connection-pdo.php";
+  
+  $data = [];
+  if ($json) {
+    $data = json_decode($json, true) ?: [];
+  }
+  if (empty($data)) {
+    $rawInput = file_get_contents('php://input');
+    if ($rawInput) {
+      $data = json_decode($rawInput, true) ?: [];
+    }
+  }
+  if (empty($data)) {
+    $data = $_POST;
+  }
+
+  $username = trim($data['username'] ?? ($data['supervisor_username'] ?? ''));
+  $password = $data['password'] ?? ($data['supervisor_password'] ?? ($data['pin'] ?? ''));
+  $actionType = trim($data['action_type'] ?? ($data['actionType'] ?? 'unspecified_action'));
+  $targetRef = trim($data['target_reference'] ?? ($data['targetReference'] ?? ''));
+  $shiftId = !empty($data['shift_id']) ? (int)$data['shift_id'] : (!empty($data['shiftId']) ? (int)$data['shiftId'] : null);
+
+  if (!$username || !$password) {
+    http_response_code(422);
+    return json_encode(["returnValue" => 0, "message" => "Supervisor username and password are required."]);
+  }
+
+  $stmt = $conn->prepare(
+    "SELECT u.user_id, u.username, u.first_name, u.last_name, u.password_hash,
+            COALESCE(u.role, '') AS role, r.role_id, r.role_name
+     FROM tblusers u
+     LEFT JOIN tblroles r ON u.role_id = r.role_id
+     WHERE LOWER(u.username) = LOWER(:username) AND u.is_active = 1"
+  );
+  $stmt->execute([":username" => $username]);
+  $supervisor = $stmt->fetch(PDO::FETCH_ASSOC);
+
+  if (!$supervisor || !$supervisor['password_hash'] || !password_verify($password, $supervisor['password_hash'])) {
+    http_response_code(401);
+    return json_encode(["returnValue" => 0, "message" => "Invalid supervisor credentials."]);
+  }
+
+  $roleText = strtolower(trim($supervisor['role']));
+  $roleName = strtolower(trim($supervisor['role_name'] ?? ''));
+  $isAuthorized = ($roleText === 'supervisor' || $roleText === 'admin' || $roleText === 'manager'
+                   || in_array($roleName, ['supervisor', 'admin', 'manager'], true));
+
+  if (!$isAuthorized) {
+    http_response_code(403);
+    return json_encode(["returnValue" => 0, "message" => "User '{$supervisor['username']}' does not have supervisor authorization privileges."]);
+  }
+
+  $currentCashier = currentUser();
+  $cashierId = $currentCashier ? (int)$currentCashier['user_id'] : null;
+
+  try {
+    $logStmt = $conn->prepare(
+      "INSERT INTO tblauthorization_log (cashier_id, supervisor_id, action_type, target_reference, shift_id, created_at)
+       VALUES (:cashierId, :supervisorId, :actionType, :targetRef, :shiftId, NOW())"
+    );
+    $logStmt->execute([
+      ":cashierId" => $cashierId,
+      ":supervisorId" => $supervisor['user_id'],
+      ":actionType" => $actionType,
+      ":targetRef" => $targetRef ?: null,
+      ":shiftId" => $shiftId
+    ]);
+    $logId = $conn->lastInsertId();
+  } catch (PDOException $e) {
+    error_log("Failed to insert authorization log: " . $e->getMessage());
+    $logId = null;
+  }
+
+  return json_encode([
+    "returnValue" => 1,
+    "authorized" => true,
+    "log_id" => $logId,
+    "supervisor" => [
+      "user_id" => (int)$supervisor['user_id'],
+      "username" => $supervisor['username'],
+      "name" => trim($supervisor['first_name'] . " " . $supervisor['last_name']),
+      "role" => $supervisor['role'] ?: $supervisor['role_name']
+    ]
+  ]);
+}
+
+$action = $_GET['action'] ?? ($_POST['action'] ?? '');
 $operation = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['operation'] ?? '') : ($_POST['operation'] ?? '');
+$op = $action ?: $operation;
 $json = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['json'] ?? '') : ($_POST['json'] ?? '');
-switch ($operation) {
+
+switch ($op) {
   case "login": echo login($json); break;
   case "logout": echo logout(); break;
   case "session": echo sessionInfo(); break;
   case "setUserPassword": echo setUserPassword($json); break;
-  default: http_response_code(400); echo json_encode(["message" => "Invalid authentication operation."]);
+  case "verify_supervisor":
+  case "verifySupervisor":
+    echo verifySupervisor($json);
+    break;
+  default:
+    http_response_code(400);
+    echo json_encode(["message" => "Invalid authentication operation."]);
 }
 ?>

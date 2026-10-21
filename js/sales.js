@@ -15,6 +15,14 @@ let activeHeldId = null;
 let activeHoldRef = null;
 let allHeldTransactions = [];
 
+// Revisions State (Shift, Drawer Events, Supervisor Overrides, Lookup Navigation)
+let currentShiftId = null;
+let supervisorAuthResolve = null;
+let supervisorAuthReject = null;
+let activeDrawerEventType = "float";
+let searchResultIndex = -1;
+let currentSearchResults = [];
+
 document.addEventListener("DOMContentLoaded", () => {
   // Cashier View Switching Listener (dispatched from page-auth navbar)
   window.addEventListener("pos:switch-view", (e) => {
@@ -23,7 +31,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Navigation & Register Toggle
   document.getElementById("btn-new-sale")?.addEventListener("click", startSale);
-  document.getElementById("btn-cancel-sale")?.addEventListener("click", requestClearCart);
+  document.getElementById("btn-cancel-sale")?.addEventListener("click", requestVoidTransaction);
 
   // Fallback / standard item add button
   document.getElementById("btn-add-item")?.addEventListener("click", addItemFromDropdown);
@@ -51,6 +59,17 @@ document.addEventListener("DOMContentLoaded", () => {
     openTenderModal();
   });
 
+  // Quantity-First: Cashier types quantity -> Enter -> focus moves to barcode input
+  const qtyInput = document.getElementById("quantity");
+  qtyInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const val = Number(qtyInput.value || 1);
+      if (val < 1) qtyInput.value = 1;
+      focusBarcodeInput();
+    }
+  });
+
   // Barcode / Keyboard-First Scanner Entry
   const barcodeInput = document.getElementById("barcode-input");
   barcodeInput?.addEventListener("keydown", (e) => {
@@ -67,37 +86,60 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-open-qty")?.addEventListener("click", openQuantityModal);
   document.getElementById("btn-confirm-qty")?.addEventListener("click", confirmQuantityOverride);
   document.getElementById("btn-void-item")?.addEventListener("click", voidActiveItem);
+  document.getElementById("btn-void-sale")?.addEventListener("click", requestVoidTransaction);
   document.getElementById("btn-hold-sale")?.addEventListener("click", openHoldModal);
   document.getElementById("btn-confirm-hold")?.addEventListener("click", executeHold);
   document.getElementById("btn-resume-sale")?.addEventListener("click", openResumeModal);
 
   // Hotkey Dock Buttons
+  document.getElementById("btn-hk-help")?.addEventListener("click", openHotkeyHelpModal);
   document.getElementById("btn-hk-lookup")?.addEventListener("click", openProductSearchModal);
-  document.getElementById("btn-hk-qty")?.addEventListener("click", openQuantityModal);
-  document.getElementById("btn-hk-cash")?.addEventListener("click", () => setSaleMode("Cash"));
+  document.getElementById("btn-hk-qty")?.addEventListener("click", focusQuantityInput);
   document.getElementById("btn-hk-void")?.addEventListener("click", voidActiveItem);
-  document.getElementById("btn-hk-resume")?.addEventListener("click", openResumeModal);
+  document.getElementById("btn-hk-void-trans")?.addEventListener("click", requestVoidTransaction);
+  document.getElementById("btn-hk-float")?.addEventListener("click", openFloatModal);
+  document.getElementById("btn-hk-lift")?.addEventListener("click", openLiftModal);
   document.getElementById("btn-hk-hold")?.addEventListener("click", openHoldModal);
-  document.getElementById("btn-hk-ar")?.addEventListener("click", () => setSaleMode("AR"));
   document.getElementById("btn-hk-tender")?.addEventListener("click", openTenderModal);
-  document.getElementById("btn-hk-cancel")?.addEventListener("click", requestClearCart);
+  document.getElementById("btn-hk-resume")?.addEventListener("click", openResumeModal);
+  document.getElementById("btn-hk-complete")?.addEventListener("click", () => {
+    if (cart.length > 0) openTenderModal();
+    else showScanFeedback("Cart is empty. Scan items first.", true);
+  });
+  document.getElementById("btn-hk-cancel")?.addEventListener("click", requestVoidTransaction);
 
-  // Product Dropdown & Auto Quantity input (Task 6)
-  document.getElementById("product_id")?.addEventListener("change", (e) => {
-    if (e.target.value) {
-      const qtyInput = document.getElementById("quantity");
-      if (qtyInput) {
-        qtyInput.value = 1;
-        qtyInput.focus();
-        qtyInput.select();
-      }
+  // Supervisor Modal Listeners
+  document.getElementById("btn-sup-submit")?.addEventListener("click", handleSupervisorSubmit);
+  document.getElementById("btn-sup-cancel")?.addEventListener("click", handleSupervisorCancel);
+  document.getElementById("btn-sup-close")?.addEventListener("click", handleSupervisorCancel);
+  document.getElementById("supervisor-username")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      document.getElementById("supervisor-password")?.focus();
+    }
+  });
+  document.getElementById("supervisor-password")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSupervisorSubmit();
     }
   });
 
-  document.getElementById("quantity")?.addEventListener("keydown", (e) => {
+  // Beginning Cash Modal Listeners
+  document.getElementById("btn-confirm-beginning-cash")?.addEventListener("click", confirmBeginningCash);
+  document.getElementById("beginning-cash-input")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      addItemFromDropdown();
+      confirmBeginningCash();
+    }
+  });
+
+  // Drawer Event Modal Listeners
+  document.getElementById("btn-submit-drawer-event")?.addEventListener("click", submitDrawerEvent);
+  document.getElementById("drawer-event-amount")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitDrawerEvent();
     }
   });
 
@@ -109,15 +151,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Product Search Query Input
   document.getElementById("product-search-query")?.addEventListener("input", filterProductSearchResults);
-  document.getElementById("product-search-query")?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const firstBtn = document.querySelector("#product-search-results .select-product-btn");
-      if (firstBtn) {
-        firstBtn.click();
-      }
-    }
-  });
 
   // Recent Sales Filter & Refresh
   document.getElementById("sales-search-filter")?.addEventListener("input", filterRecentSales);
@@ -151,7 +184,19 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Modal Close Focus Restoration (Returns focus to barcode input)
-  ["tender-modal", "product-search-modal", "quantity-modal", "receipt-modal", "clear-cart-confirm-modal", "hold-transaction-modal", "resume-transaction-modal"].forEach((modalId) => {
+  [
+    "tender-modal",
+    "product-search-modal",
+    "quantity-modal",
+    "receipt-modal",
+    "clear-cart-confirm-modal",
+    "hold-transaction-modal",
+    "resume-transaction-modal",
+    "supervisor-modal",
+    "beginning-cash-modal",
+    "drawer-event-modal",
+    "hotkey-reference-modal"
+  ].forEach((modalId) => {
     const el = document.getElementById(modalId);
     el?.addEventListener("hidden.bs.modal", () => {
       focusBarcodeInput();
@@ -164,7 +209,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Live Clock
   startLiveClock();
 
-  // Load Data
+  // Load Data & Shifts
   loadFormData();
   loadSales();
 });
@@ -239,6 +284,9 @@ const loadFormData = async () => {
     if (navTermEl) {
       navTermEl.textContent = data.selectedTerminal?.terminal_name || "Terminal: None";
     }
+
+    // Check shift status for current cashier & terminal (Beginning cash prompt)
+    await checkAndPromptShift();
 
     fillSelect("sale_payment_method_id", data.paymentMethods, "payment_method_id", "method_name", "-- SELECT PAYMENT METHOD --");
     fillSelect("ar_customer_id", data.customers, "ar_customer_id", "customer_name", "-- SELECT CUSTOMER --");
@@ -358,17 +406,35 @@ const showScanFeedback = (msg, isError = false) => {
 /* ==========================================================================
    Keyboard-First Scanning & Product Lookup
    ========================================================================== */
+const focusQuantityInput = () => {
+  const qtyInput = document.getElementById("quantity");
+  if (qtyInput) {
+    qtyInput.focus();
+    qtyInput.select();
+  }
+};
+
 const handleBarcodeScan = () => {
   const input = document.getElementById("barcode-input");
+  const qtyInput = document.getElementById("quantity");
   if (!input) return;
   const rawQuery = input.value.trim();
-  if (!rawQuery) return;
+  if (!rawQuery) {
+    if (cart.length > 0) {
+      openTenderModal();
+    }
+    return;
+  }
+
+  const quantity = Number(qtyInput?.value || 1);
+  const activeQty = quantity > 0 ? quantity : 1;
 
   // Search logic:
-  // 1. Exact numeric product_id match
+  // 1. Exact barcode match
   // 2. Exact name match (case-insensitive)
-  // 3. Prefix / Substring match in product_name
-  let matched = products.find((p) => String(p.product_id) === rawQuery);
+  // 3. Prefix match in product_name
+  // 4. Substring match in product_name
+  let matched = products.find((p) => p.barcode && String(p.barcode).trim() === rawQuery);
 
   if (!matched) {
     const lowerQuery = rawQuery.toLowerCase();
@@ -386,11 +452,12 @@ const handleBarcodeScan = () => {
   }
 
   if (matched) {
-    addProductToCart(matched, 1);
+    addProductToCart(matched, activeQty);
     input.value = "";
-    showScanFeedback(`Added: ${matched.product_name} (₱${Number(matched.price).toFixed(2)})`);
+    if (qtyInput) qtyInput.value = 1;
+    showScanFeedback(`Added ${activeQty}x: ${matched.product_name} (₱${Number(matched.price).toFixed(2)})`);
   } else {
-    showScanFeedback(`Item "${rawQuery}" not found. Press F1 to lookup.`, true);
+    showScanFeedback(`Item / Barcode "${rawQuery}" not found. Press F2 to lookup.`, true);
   }
   focusBarcodeInput();
 };
@@ -424,6 +491,7 @@ const addProductToCart = (product, quantity = 1) => {
   } else {
     cart.push({
       productId: Number(product.product_id),
+      barcode: product.barcode || "",
       productName: product.product_name,
       unitPrice: Number(product.price || 0),
       quantity: qty,
@@ -434,19 +502,12 @@ const addProductToCart = (product, quantity = 1) => {
     activeCartIndex = cart.length - 1;
   }
   renderCart();
-
-  // Task 6: Automatically focus and select quantity input for the active item
-  setTimeout(() => {
-    const activeQtyInput = document.querySelector(`.cart-qty-input[data-index="${activeCartIndex}"]`);
-    if (activeQtyInput && !isAnyModalOpen()) {
-      activeQtyInput.focus();
-      activeQtyInput.select();
-    }
-  }, 60);
+  focusBarcodeInput();
+};
 };
 
 /* ==========================================================================
-   Product Search Modal [F1]
+   Product Search Modal [F2]
    ========================================================================== */
 const openProductSearchModal = () => {
   const modalEl = document.getElementById("product-search-modal");
@@ -455,6 +516,7 @@ const openProductSearchModal = () => {
   modal.show();
 
   const queryInput = document.getElementById("product-search-query");
+  searchResultIndex = -1;
   if (queryInput) {
     queryInput.value = "";
     setTimeout(() => queryInput.focus(), 150);
@@ -464,90 +526,78 @@ const openProductSearchModal = () => {
 
 const filterProductSearchResults = () => {
   const query = (document.getElementById("product-search-query")?.value || "").toLowerCase().trim();
+  searchResultIndex = 0;
   if (!query) {
     renderProductSearchResults(products);
     return;
   }
-  // Keyed on Product ID: exact product_id match first, then product_id prefix, then product_name match
-  const exactIdMatches = products.filter((p) => String(p.product_id) === query);
-  const prefixIdMatches = products.filter((p) => String(p.product_id).startsWith(query) && String(p.product_id) !== query);
-  const nameMatches = products.filter(
-    (p) => !String(p.product_id).startsWith(query) && p.product_name.toLowerCase().includes(query)
-  );
-  renderProductSearchResults([...exactIdMatches, ...prefixIdMatches, ...nameMatches]);
+  const barcodeMatches = products.filter((p) => p.barcode && p.barcode.toLowerCase().includes(query));
+  const exactNameMatches = products.filter((p) => p.product_name.toLowerCase() === query);
+  const prefixNameMatches = products.filter((p) => p.product_name.toLowerCase().startsWith(query) && p.product_name.toLowerCase() !== query);
+  const substrNameMatches = products.filter((p) => !p.product_name.toLowerCase().startsWith(query) && p.product_name.toLowerCase().includes(query));
+
+  const combined = Array.from(new Set([...barcodeMatches, ...exactNameMatches, ...prefixNameMatches, ...substrNameMatches]));
+  renderProductSearchResults(combined);
 };
 
 const renderProductSearchResults = (items) => {
   const tbody = document.getElementById("product-search-results");
   if (!tbody) return;
+  currentSearchResults = items.slice(0, 30);
 
-  if (!items.length) {
+  if (!currentSearchResults.length) {
     tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">No matching products found.</td></tr>';
+    searchResultIndex = -1;
     return;
   }
 
-  tbody.innerHTML = items
-    .slice(0, 30)
-    .map(
-      (p) => `
-      <tr>
-        <td class="font-monospace fw-bold text-primary">#${p.product_id}</td>
-        <td class="fw-semibold">${escapeHtml(p.product_name)}</td>
-        <td class="text-end font-monospace">₱${Number(p.price).toFixed(2)}</td>
-        <td class="text-center">
-          <button type="button" class="btn btn-sm btn-primary py-0 px-2 select-product-btn" data-pid="${p.product_id}">
-            Select [Enter]
-          </button>
-        </td>
-      </tr>`
-    )
+  if (searchResultIndex < 0 || searchResultIndex >= currentSearchResults.length) {
+    searchResultIndex = 0;
+  }
+
+  tbody.innerHTML = currentSearchResults
+    .map((p, idx) => {
+      const isSelected = idx === searchResultIndex;
+      const barcodeDisplay = p.barcode || `0000000${p.product_id}`.slice(-8);
+      return `
+        <tr class="${isSelected ? "table-active" : ""}" data-result-index="${idx}">
+          <td class="font-monospace fw-bold text-primary">${escapeHtml(barcodeDisplay)}</td>
+          <td class="fw-semibold">${escapeHtml(p.product_name)}</td>
+          <td class="text-end font-monospace">₱${Number(p.price).toFixed(2)}</td>
+          <td class="text-center">
+            <button type="button" class="btn btn-sm btn-primary py-0 px-2 select-product-btn" data-index="${idx}">
+              Add [Enter]
+            </button>
+          </td>
+        </tr>`;
+    })
     .join("");
 
-  tbody.querySelectorAll(".select-product-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const pid = btn.dataset.pid;
-      const product = products.find((p) => String(p.product_id) === pid);
-      bootstrap.Modal.getInstance(document.getElementById("product-search-modal"))?.hide();
-      if (product) {
-        let qty = 1;
-        if (typeof Swal !== "undefined") {
-          const { value: qtyVal } = await Swal.fire({
-            title: `Add ${product.product_name}`,
-            text: `Product ID: #${product.product_id} | Unit Price: ₱${Number(product.price).toFixed(2)}`,
-            input: "number",
-            inputLabel: "Enter Quantity",
-            inputValue: 1,
-            inputAttributes: {
-              min: "1",
-              step: "1",
-              autofocus: "autofocus"
-            },
-            showCancelButton: true,
-            confirmButtonText: "Add to Cart",
-            confirmButtonColor: "#198754",
-            cancelButtonText: "Cancel",
-            inputValidator: (val) => {
-              if (!val || isNaN(val) || parseInt(val, 10) < 1) {
-                return "Please enter a valid quantity of 1 or more!";
-              }
-            }
-          });
-          if (!qtyVal) {
-            focusBarcodeInput();
-            return;
-          }
-          qty = parseInt(qtyVal, 10) || 1;
-        }
-        addProductToCart(product, qty);
-        showScanFeedback(`Added: ${product.product_name} x ${qty}`);
-      }
-      focusBarcodeInput();
+  tbody.querySelectorAll("tr").forEach((row) => {
+    row.addEventListener("click", () => {
+      const idx = Number(row.dataset.resultIndex);
+      selectSearchedProduct(idx);
     });
   });
 };
 
+const selectSearchedProduct = (index) => {
+  const product = currentSearchResults[index];
+  if (!product) return;
+  const qtyInput = document.getElementById("quantity");
+  const qty = Number(qtyInput?.value || 1);
+  const activeQty = qty > 0 ? qty : 1;
+
+  addProductToCart(product, activeQty);
+  if (qtyInput) qtyInput.value = 1;
+  showScanFeedback(`Added ${activeQty}x ${product.product_name} (₱${Number(product.price).toFixed(2)} each)`);
+
+  bootstrap.Modal.getInstance(document.getElementById("product-search-modal"))?.hide();
+  focusBarcodeInput();
+};
+
 /* ==========================================================================
-   Quantity Modifier Modal [F2]
+   Quantity Modifier Modal [F3]
    ========================================================================== */
 const openQuantityModal = () => {
   if (!cart.length) {
@@ -574,7 +624,7 @@ const openQuantityModal = () => {
   }
 };
 
-const confirmQuantityOverride = () => {
+const confirmQuantityOverride = async () => {
   const inputEl = document.getElementById("qty-override-input");
   const newQty = Number(inputEl?.value || 0);
   if (newQty <= 0) {
@@ -582,28 +632,80 @@ const confirmQuantityOverride = () => {
     return;
   }
   const targetIndex = activeCartIndex >= 0 && activeCartIndex < cart.length ? activeCartIndex : cart.length - 1;
-  if (cart[targetIndex]) {
-    cart[targetIndex].quantity = newQty;
-    renderCart();
-    showScanFeedback(`Updated quantity for ${cart[targetIndex].productName} to ${newQty}.`);
+  const item = cart[targetIndex];
+  if (!item) return;
+
+  if (newQty === item.quantity) {
+    bootstrap.Modal.getInstance(document.getElementById("quantity-modal"))?.hide();
+    focusBarcodeInput();
+    return;
   }
+
   bootstrap.Modal.getInstance(document.getElementById("quantity-modal"))?.hide();
+
+  try {
+    const auth = await requestSupervisorAuth(
+      "change_cart_quantity",
+      `${item.productName}: Qty ${item.quantity} -> ${newQty}`
+    );
+    item.quantity = newQty;
+    renderCart();
+    showScanFeedback(`Updated ${item.productName} qty to ${newQty} (Authorized by ${auth.supervisor?.name || "Supervisor"}).`);
+  } catch (err) {
+    if (err.message && err.message !== "Cancelled") {
+      showError(err.message);
+    }
+  }
   focusBarcodeInput();
 };
 
 /* ==========================================================================
-   Void Line Item [F4]
+   Void Line Item [F4] & Void Transaction [F5] (Protected by Supervisor)
    ========================================================================== */
-const voidActiveItem = () => {
+const voidActiveItem = async () => {
   if (!cart.length) {
     showScanFeedback("Cart is empty. Nothing to void.", true);
     return;
   }
   const targetIndex = activeCartIndex >= 0 && activeCartIndex < cart.length ? activeCartIndex : cart.length - 1;
-  const removed = cart.splice(targetIndex, 1)[0];
-  activeCartIndex = cart.length - 1;
-  renderCart();
-  showScanFeedback(`Voided item: ${removed?.productName || "Selected item"}.`);
+  const item = cart[targetIndex];
+  if (!item) return;
+
+  try {
+    const auth = await requestSupervisorAuth(
+      "void_item",
+      `${item.productName} (Qty: ${item.quantity}, Price: ₱${item.unitPrice})`
+    );
+    const removed = cart.splice(targetIndex, 1)[0];
+    activeCartIndex = Math.max(0, cart.length - 1);
+    renderCart();
+    showScanFeedback(`Voided item: ${removed?.productName} (Authorized by ${auth.supervisor?.name || "Supervisor"}).`);
+  } catch (err) {
+    if (err.message && err.message !== "Cancelled") {
+      showError(err.message);
+    }
+  }
+  focusBarcodeInput();
+};
+
+const requestVoidTransaction = async () => {
+  if (!cart.length) {
+    showScanFeedback("Cart is already empty.");
+    return;
+  }
+  const grandTotal = document.getElementById("pos-grand-total")?.textContent || "PHP 0.00";
+  try {
+    const auth = await requestSupervisorAuth(
+      "void_transaction",
+      `Cart Total: ${grandTotal} (${cart.length} line items)`
+    );
+    closeSale();
+    showScanFeedback(`Transaction voided (Authorized by ${auth.supervisor?.name || "Supervisor"}).`);
+  } catch (err) {
+    if (err.message && err.message !== "Cancelled") {
+      showError(err.message);
+    }
+  }
   focusBarcodeInput();
 };
 
@@ -708,25 +810,16 @@ const renderCart = () => {
                   <tr class="${isActive ? "table-active" : ""}" data-row-index="${index}">
                     <td class="num-cell text-muted">${index + 1}</td>
                     <td class="fw-semibold">
-                      <span class="font-monospace text-primary me-1">#${item.productId}</span> ${escapeHtml(item.productName)}${promoBadge}
+                      ${escapeHtml(item.productName)}${promoBadge}
                     </td>
                     <td class="text-center num-cell">
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        class="form-control form-control-sm text-center fw-bold cart-qty-input d-inline-block font-monospace"
-                        data-index="${index}"
-                        value="${item.quantity}"
-                        style="width: 65px; height: 28px; padding: 2px 4px;"
-                        aria-label="Item quantity"
-                      />
+                      <span class="fw-bold font-monospace fs-6">${item.quantity}</span>
                     </td>
                     <td class="text-end num-cell">₱${item.unitPrice.toFixed(2)}</td>
                     <td class="text-end num-cell text-success font-monospace row-promo-discount">${promoText}</td>
                     <td class="text-end num-cell fw-bold row-line-total">₱${lineTotal.toFixed(2)}</td>
                     <td class="text-center">
-                      <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 remove-item-btn" data-index="${index}" title="Remove line item">
+                      <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 remove-item-btn" data-index="${index}" title="Void item [F4] (Supervisor Override)">
                         &times;
                       </button>
                     </td>
@@ -739,22 +832,20 @@ const renderCart = () => {
       // Row Selection Click
       tableContainer.querySelectorAll("tbody tr").forEach((row) => {
         row.addEventListener("click", (e) => {
-          if (!e.target.closest(".remove-item-btn") && !e.target.closest(".cart-qty-input")) {
+          if (!e.target.closest(".remove-item-btn")) {
             activeCartIndex = Number(row.dataset.rowIndex);
             renderCart();
           }
         });
       });
 
-      // Individual Remove Button
+      // Individual Remove Button -> Triggers Supervisor Override
       tableContainer.querySelectorAll(".remove-item-btn").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          const idx = Number(btn.dataset.index);
-          cart.splice(idx, 1);
-          activeCartIndex = cart.length - 1;
+          activeCartIndex = Number(btn.dataset.index);
           renderCart();
-          focusBarcodeInput();
+          voidActiveItem();
         });
       });
 
@@ -988,67 +1079,215 @@ const executeCheckout = async () => {
 };
 
 /* ==========================================================================
-   Global Conflict-Free Keyboard Shortcuts
+   Global Keyboard Handler Architecture (Context-Aware Single Dispatcher)
    ========================================================================== */
 const handleGlobalShortcuts = (e) => {
-  // If an input is currently inside a modal, don't hijack standard typing
-  const activeTag = document.activeElement?.tagName;
+  // Prevent ALL Function key browser defaults (Chrome kiosk safety)
+  if (/^F[1-9]$|^F1[0-2]$/.test(e.key)) {
+    e.preventDefault();
+  }
 
+  // Context 1: Supervisor Authorization Modal is Open
+  const supModal = document.getElementById("supervisor-modal");
+  if (supModal && supModal.classList.contains("show")) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      handleSupervisorCancel();
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const userInput = document.getElementById("supervisor-username");
+      const passInput = document.getElementById("supervisor-password");
+      if (document.activeElement === userInput) {
+        passInput?.focus();
+      } else {
+        handleSupervisorSubmit();
+      }
+      return;
+    }
+    return;
+  }
+
+  // Context 2: Beginning Cash Modal is Open
+  const begModal = document.getElementById("beginning-cash-modal");
+  if (begModal && begModal.classList.contains("show")) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      confirmBeginningCash();
+    }
+    return;
+  }
+
+  // Context 3: Cash Drawer Event Modal is Open
+  const drawerModal = document.getElementById("drawer-event-modal");
+  if (drawerModal && drawerModal.classList.contains("show")) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      bootstrap.Modal.getInstance(drawerModal)?.hide();
+      focusBarcodeInput();
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitDrawerEvent();
+      return;
+    }
+    return;
+  }
+
+  // Context 4: Product Search Modal is Open
+  const searchModal = document.getElementById("product-search-modal");
+  if (searchModal && searchModal.classList.contains("show")) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      bootstrap.Modal.getInstance(searchModal)?.hide();
+      focusBarcodeInput();
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (currentSearchResults.length > 0) {
+        searchResultIndex = (searchResultIndex + 1) % currentSearchResults.length;
+        renderProductSearchResults(currentSearchResults);
+      }
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (currentSearchResults.length > 0) {
+        searchResultIndex = (searchResultIndex - 1 + currentSearchResults.length) % currentSearchResults.length;
+        renderProductSearchResults(currentSearchResults);
+      }
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (searchResultIndex >= 0 && searchResultIndex < currentSearchResults.length) {
+        selectSearchedProduct(searchResultIndex);
+      }
+      return;
+    }
+    return;
+  }
+
+  // Context 5: Quantity Override Modal is Open
+  const qtyModal = document.getElementById("quantity-modal");
+  if (qtyModal && qtyModal.classList.contains("show")) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      bootstrap.Modal.getInstance(qtyModal)?.hide();
+      focusBarcodeInput();
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      confirmQuantityOverride();
+      return;
+    }
+    return;
+  }
+
+  // Context 6: Tender Modal is Open
+  const tenderModal = document.getElementById("tender-modal");
+  if (tenderModal && tenderModal.classList.contains("show")) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      bootstrap.Modal.getInstance(tenderModal)?.hide();
+      focusBarcodeInput();
+      return;
+    }
+    if (e.key === "Enter" || e.key === "F12") {
+      e.preventDefault();
+      executeCheckout();
+      return;
+    }
+    return;
+  }
+
+  // Context 7: Any other modal open (e.g. Hotkey Help, Clear Cart, Receipt)
+  if (isAnyModalOpen()) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      document.querySelectorAll(".modal.show").forEach((m) => {
+        bootstrap.Modal.getInstance(m)?.hide();
+      });
+      focusBarcodeInput();
+    }
+    return;
+  }
+
+  // Context 8: Active POS Checkout Register View
   switch (e.key) {
     case "F1":
-      e.preventDefault();
-      openProductSearchModal();
+      openHotkeyHelpModal();
       break;
 
     case "F2":
-      e.preventDefault();
-      openQuantityModal();
+      openProductSearchModal();
       break;
 
     case "F3":
-      e.preventDefault();
-      setSaleMode("Cash");
+      focusQuantityInput();
       break;
 
     case "F4":
-      e.preventDefault();
       voidActiveItem();
       break;
 
+    case "F5":
+      requestVoidTransaction();
+      break;
+
     case "F6":
-      e.preventDefault();
-      openResumeModal();
+      openFloatModal();
       break;
 
     case "F7":
-      e.preventDefault();
-      openHoldModal();
+      openLiftModal();
       break;
 
     case "F8":
-      e.preventDefault();
-      startSale();
+      openHoldModal();
       break;
 
     case "F9":
-      e.preventDefault();
-      setSaleMode("AR");
-      break;
-
-    case "F12":
-      e.preventDefault();
       openTenderModal();
       break;
 
-    case "Escape":
-      // If modal is open, close topmost modal; else prompt to clear active cart safely
-      if (isAnyModalOpen()) {
-        document.querySelectorAll(".modal.show").forEach((m) => {
-          bootstrap.Modal.getInstance(m)?.hide();
-        });
-        focusBarcodeInput();
+    case "F10":
+      openResumeModal();
+      break;
+
+    case "F12":
+      if (cart.length > 0) {
+        openTenderModal();
       } else {
-        requestClearCart();
+        showScanFeedback("Cannot tender an empty cart. Scan items first.", true);
+      }
+      break;
+
+    case "ArrowDown":
+      if (cart.length > 0) {
+        e.preventDefault();
+        activeCartIndex = (activeCartIndex + 1) % cart.length;
+        renderCart();
+      }
+      break;
+
+    case "ArrowUp":
+      if (cart.length > 0) {
+        e.preventDefault();
+        activeCartIndex = (activeCartIndex - 1 + cart.length) % cart.length;
+        renderCart();
+      }
+      break;
+
+    case "Escape":
+      if (cart.length > 0) {
+        requestVoidTransaction();
+      } else {
+        showScanFeedback("Register ready.");
       }
       break;
 
@@ -1864,5 +2103,287 @@ const discardHeldTransaction = async (heldId) => {
   } catch (err) {
     console.error(err);
     showError("Unable to discard held transaction.");
+  }
+};
+
+/* ==========================================================================
+   Revisions: Supervisor Override Authorization Logic
+   ========================================================================== */
+const requestSupervisorAuth = (actionType, targetRef = "") => {
+  return new Promise((resolve, reject) => {
+    supervisorAuthResolve = resolve;
+    supervisorAuthReject = reject;
+
+    const modalEl = document.getElementById("supervisor-modal");
+    if (!modalEl) {
+      reject(new Error("Supervisor modal element missing in page."));
+      return;
+    }
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    const actionBadge = document.getElementById("supervisor-action-label");
+    if (actionBadge) {
+      const formattedAction = actionType.replace(/_/g, " ").toUpperCase();
+      actionBadge.textContent = `Action: ${formattedAction} ${targetRef ? `[${targetRef}]` : ""}`;
+    }
+
+    const userInput = document.getElementById("supervisor-username");
+    const passInput = document.getElementById("supervisor-password");
+    const errMsg = document.getElementById("supervisor-error-msg");
+
+    if (userInput) userInput.value = "";
+    if (passInput) passInput.value = "";
+    if (errMsg) {
+      errMsg.textContent = "";
+      errMsg.classList.add("d-none");
+    }
+
+    modal.show();
+    setTimeout(() => {
+      userInput?.focus();
+    }, 150);
+  });
+};
+
+const handleSupervisorSubmit = async () => {
+  const userInput = document.getElementById("supervisor-username");
+  const passInput = document.getElementById("supervisor-password");
+  const errMsg = document.getElementById("supervisor-error-msg");
+  const actionLabel = document.getElementById("supervisor-action-label")?.textContent || "";
+
+  const username = userInput?.value.trim();
+  const password = passInput?.value;
+
+  if (!username || !password) {
+    if (errMsg) {
+      errMsg.textContent = "Please enter both supervisor username and password.";
+      errMsg.classList.remove("d-none");
+    }
+    if (!username) userInput?.focus();
+    else passInput?.focus();
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append("action", "verify_supervisor");
+    formData.append("operation", "verify_supervisor");
+    formData.append(
+      "json",
+      JSON.stringify({
+        username,
+        password,
+        action_type: actionLabel.replace("Action: ", "").split("[")[0].trim().toLowerCase().replace(/\s+/g, "_"),
+        target_reference: actionLabel,
+        shift_id: currentShiftId
+      })
+    );
+
+    const { data } = await axios.post("/api/auth.php?action=verify_supervisor", formData, { withCredentials: true });
+    if (data.returnValue === 1 && data.authorized) {
+      bootstrap.Modal.getInstance(document.getElementById("supervisor-modal"))?.hide();
+      if (supervisorAuthResolve) {
+        supervisorAuthResolve(data);
+        supervisorAuthResolve = null;
+        supervisorAuthReject = null;
+      }
+    } else {
+      if (errMsg) {
+        errMsg.textContent = data.message || "Invalid supervisor credentials.";
+        errMsg.classList.remove("d-none");
+      }
+      passInput?.focus();
+      passInput?.select();
+    }
+  } catch (err) {
+    if (errMsg) {
+      errMsg.textContent = err.response?.data?.message || err.message || "Supervisor verification failed.";
+      errMsg.classList.remove("d-none");
+    }
+    passInput?.focus();
+    passInput?.select();
+  }
+};
+
+const handleSupervisorCancel = () => {
+  bootstrap.Modal.getInstance(document.getElementById("supervisor-modal"))?.hide();
+  if (supervisorAuthReject) {
+    supervisorAuthReject(new Error("Cancelled"));
+    supervisorAuthResolve = null;
+    supervisorAuthReject = null;
+  }
+  focusBarcodeInput();
+};
+
+/* ==========================================================================
+   Revisions: Beginning Cash & Shift Management
+   ========================================================================== */
+const checkAndPromptShift = async () => {
+  try {
+    const { data } = await axios.get(apiUrl, {
+      params: { operation: "getActiveShift" },
+      withCredentials: true
+    });
+    if (data.activeShift && data.activeShift.shift_id) {
+      currentShiftId = Number(data.activeShift.shift_id);
+      updateShiftBadge(currentShiftId, data.activeShift.opening_cash);
+      focusBarcodeInput();
+    } else {
+      promptBeginningCash();
+    }
+  } catch (err) {
+    console.error("Shift check error:", err);
+    focusBarcodeInput();
+  }
+};
+
+const promptBeginningCash = () => {
+  const modalEl = document.getElementById("beginning-cash-modal");
+  if (!modalEl) return;
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+  const input = document.getElementById("beginning-cash-input");
+  setTimeout(() => {
+    input?.focus();
+    input?.select();
+  }, 200);
+};
+
+const confirmBeginningCash = async () => {
+  const input = document.getElementById("beginning-cash-input");
+  const amount = parseFloat(input?.value || "0");
+  if (isNaN(amount) || amount < 0) {
+    showError("Please enter a valid starting cash balance (>= 0.00).");
+    input?.focus();
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append("operation", "openShift");
+    formData.append("json", JSON.stringify({ openingCash: amount }));
+
+    const { data } = await axios.post(apiUrl, formData, { withCredentials: true });
+    if (data.returnValue === 1 && data.shift) {
+      currentShiftId = Number(data.shift.shift_id);
+      updateShiftBadge(currentShiftId, data.shift.opening_cash);
+      bootstrap.Modal.getInstance(document.getElementById("beginning-cash-modal"))?.hide();
+      showScanFeedback(`Shift #${currentShiftId} opened with ₱${amount.toFixed(2)} beginning cash.`);
+      focusBarcodeInput();
+    } else {
+      showError(data.message || "Failed to open shift.");
+    }
+  } catch (err) {
+    showError(err.response?.data?.message || err.message || "Error opening shift.");
+  }
+};
+
+const updateShiftBadge = (shiftId, openingCash) => {
+  const shiftBadge = document.getElementById("pos-shift-badge");
+  if (shiftBadge) {
+    shiftBadge.textContent = `SHIFT #${shiftId} (FLOAT: ₱${Number(openingCash).toFixed(2)})`;
+    shiftBadge.classList.remove("d-none");
+  }
+};
+
+/* ==========================================================================
+   Revisions: Cash Drawer Events (Float & Lift)
+   ========================================================================== */
+const openFloatModal = () => {
+  activeDrawerEventType = "float";
+  const modalEl = document.getElementById("drawer-event-modal");
+  const badge = document.getElementById("drawer-event-badge");
+  const amountInput = document.getElementById("drawer-event-amount");
+  const notesInput = document.getElementById("drawer-event-notes");
+
+  if (badge) {
+    badge.textContent = "CASH FLOAT: ADD CHANGE FUND";
+    badge.className = "badge bg-success fs-6 px-3 py-2 fw-bold";
+  }
+  if (amountInput) amountInput.value = "500.00";
+  if (notesInput) notesInput.value = "Replenish change fund coins/small bills";
+
+  bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  setTimeout(() => {
+    amountInput?.focus();
+    amountInput?.select();
+  }, 150);
+};
+
+const openLiftModal = () => {
+  activeDrawerEventType = "lift";
+  const modalEl = document.getElementById("drawer-event-modal");
+  const badge = document.getElementById("drawer-event-badge");
+  const amountInput = document.getElementById("drawer-event-amount");
+  const notesInput = document.getElementById("drawer-event-notes");
+
+  if (badge) {
+    badge.textContent = "CASH LIFT / DROP: REMOVE EXCESS CASH";
+    badge.className = "badge bg-warning text-dark fs-6 px-3 py-2 fw-bold";
+  }
+  if (amountInput) amountInput.value = "5000.00";
+  if (notesInput) notesInput.value = "Mid-shift excess cash pickup";
+
+  bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  setTimeout(() => {
+    amountInput?.focus();
+    amountInput?.select();
+  }, 150);
+};
+
+const submitDrawerEvent = async () => {
+  const amountInput = document.getElementById("drawer-event-amount");
+  const notesInput = document.getElementById("drawer-event-notes");
+  const amount = parseFloat(amountInput?.value || "0");
+  const notes = notesInput?.value.trim() || "";
+
+  if (isNaN(amount) || amount <= 0) {
+    showError("Please enter a valid positive amount.");
+    amountInput?.focus();
+    return;
+  }
+
+  bootstrap.Modal.getInstance(document.getElementById("drawer-event-modal"))?.hide();
+
+  try {
+    const auth = await requestSupervisorAuth(
+      activeDrawerEventType === "float" ? "cash_float" : "cash_lift",
+      `Amount: ₱${amount.toFixed(2)} - ${notes}`
+    );
+
+    const formData = new FormData();
+    formData.append("operation", "recordDrawerEvent");
+    formData.append(
+      "json",
+      JSON.stringify({
+        shiftId: currentShiftId,
+        eventType: activeDrawerEventType,
+        amount: amount,
+        authorizedBy: auth.supervisor?.user_id,
+        notes: notes
+      })
+    );
+
+    const { data } = await axios.post(apiUrl, formData, { withCredentials: true });
+    if (data.returnValue === 1) {
+      showScanFeedback(
+        `Recorded ${activeDrawerEventType.toUpperCase()}: ₱${amount.toFixed(2)} (Authorized by ${auth.supervisor?.name || "Supervisor"}).`
+      );
+    }
+  } catch (err) {
+    if (err.message && err.message !== "Cancelled") {
+      showError(err.response?.data?.message || err.message);
+    }
+  }
+  focusBarcodeInput();
+};
+
+/* ==========================================================================
+   Revisions: Hotkey Reference Help Modal [F1]
+   ========================================================================== */
+const openHotkeyHelpModal = () => {
+  const modalEl = document.getElementById("hotkey-reference-modal");
+  if (modalEl) {
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
   }
 };
